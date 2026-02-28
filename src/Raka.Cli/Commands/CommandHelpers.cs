@@ -16,7 +16,7 @@ internal static class CommandHelpers
     /// Global options that every command can use to target an app.
     /// If not provided, falls back to the saved session.
     /// </summary>
-    public static Option<string?> NameOption { get; } = new("--name") { Description = "Target app by process name or window title" };
+    public static Option<string?> AppOption { get; } = new("--app") { Description = "Target app by process name or window title" };
     public static Option<int?> PidOption { get; } = new("--pid") { Description = "Target app by process ID" };
 
     /// <summary>
@@ -24,7 +24,7 @@ internal static class CommandHelpers
     /// </summary>
     public static void AddTargetOptions(Command command)
     {
-        command.Add(NameOption);
+        command.Add(AppOption);
         command.Add(PidOption);
     }
 
@@ -34,7 +34,7 @@ internal static class CommandHelpers
     /// </summary>
     public static async Task<PipeClient> GetConnectedClient(ParseResult parseResult)
     {
-        var name = parseResult.GetValue(NameOption);
+        var name = parseResult.GetValue(AppOption);
         var pid = parseResult.GetValue(PidOption);
 
         string pipeName;
