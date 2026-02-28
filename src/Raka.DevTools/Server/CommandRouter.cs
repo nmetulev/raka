@@ -3,12 +3,9 @@ using System.Text.Json;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Automation.Provider;
-using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Raka.DevTools.Core;
 using Raka.Protocol;
-using Windows.Graphics.Imaging;
-using Windows.Storage.Streams;
 
 namespace Raka.DevTools.Server;
 
@@ -281,44 +278,77 @@ internal sealed class CommandRouter
     private async Task<RakaResponse> HandleScreenshotAsync(JsonElement? parameters)
     {
         string? elementId = null;
-        if (parameters.HasValue && parameters.Value.TryGetProperty("element", out var elemProp))
-            elementId = elemProp.GetString();
+        string mode = "auto"; // auto, capture, render
+        string? background = null;
 
-        UIElement target;
-        if (elementId != null)
+        if (parameters.HasValue)
         {
-            var element = _walker.GetElement(elementId)
-                ?? throw new ArgumentException($"Element '{elementId}' not found. Run 'inspect' first.");
-            if (element is not UIElement uiEl)
-                return new RakaResponse { Success = false, Error = $"Element {elementId} ({element.GetType().Name}) is not a UIElement" };
-            target = uiEl;
-        }
-        else
-        {
-            target = _window?.Content as UIElement
-                ?? throw new InvalidOperationException("No window content available");
+            if (parameters.Value.TryGetProperty("element", out var elemProp))
+                elementId = elemProp.GetString();
+            if (parameters.Value.TryGetProperty("mode", out var modeProp))
+                mode = modeProp.GetString() ?? "auto";
+            if (parameters.Value.TryGetProperty("background", out var bgProp))
+                background = bgProp.GetString();
         }
 
-        var rtb = new RenderTargetBitmap();
-        await rtb.RenderAsync(target);
+        // Auto mode: capture for whole window, render for specific elements
+        if (mode == "auto")
+            mode = elementId == null ? "capture" : "render";
 
-        var pixelBuffer = await rtb.GetPixelsAsync();
-        var pixels = pixelBuffer.ToArray();
-        var width = rtb.PixelWidth;
-        var height = rtb.PixelHeight;
+        byte[] pngBytes;
+        int width, height;
 
-        // Encode as PNG
-        using var stream = new InMemoryRandomAccessStream();
-        var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.PngEncoderId, stream);
-        encoder.SetPixelData(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied,
-            (uint)width, (uint)height, 96, 96, pixels);
-        await encoder.FlushAsync();
+        if (mode == "capture")
+        {
+            if (_window == null)
+                throw new InvalidOperationException("No window available");
 
-        stream.Seek(0);
-        var bytes = new byte[stream.Size];
-        await stream.ReadAsync(bytes.AsBuffer(), (uint)stream.Size, InputStreamOptions.None);
+            if (elementId != null)
+            {
+                var el = _walker.GetElement(elementId) as UIElement
+                    ?? throw new ArgumentException($"Element '{elementId}' is not a UIElement or not found");
+                (pngBytes, width, height) = await ScreenCapturer.CaptureElementFromWindowAsync(_window, el);
+            }
+            else
+            {
+                (pngBytes, width, height) = await ScreenCapturer.CaptureWindowAsync(_window);
+            }
+        }
+        else // render mode (RenderTargetBitmap)
+        {
+            UIElement target;
+            if (elementId != null)
+            {
+                var element = _walker.GetElement(elementId)
+                    ?? throw new ArgumentException($"Element '{elementId}' not found. Run 'inspect' first.");
+                if (element is not UIElement uiEl)
+                    return new RakaResponse { Success = false, Error = $"Element {elementId} ({element.GetType().Name}) is not a UIElement" };
+                target = uiEl;
+            }
+            else
+            {
+                target = _window?.Content as UIElement
+                    ?? throw new InvalidOperationException("No window content available");
+            }
 
-        var base64 = Convert.ToBase64String(bytes);
+            var rtb = new RenderTargetBitmap();
+            await rtb.RenderAsync(target);
+
+            var pixelBuffer = await rtb.GetPixelsAsync();
+            var pixels = pixelBuffer.ToArray();
+            width = rtb.PixelWidth;
+            height = rtb.PixelHeight;
+
+            if (background != null)
+            {
+                var (r, g, b) = ScreenCapturer.ParseHexColor(background);
+                ScreenCapturer.ApplyBackground(pixels, r, g, b);
+            }
+
+            pngBytes = await ScreenCapturer.EncodePngFromPixelsAsync(pixels, width, height);
+        }
+
+        var base64 = Convert.ToBase64String(pngBytes);
 
         return new RakaResponse
         {
@@ -329,6 +359,7 @@ internal sealed class CommandRouter
                 height,
                 format = "png",
                 encoding = "base64",
+                mode,
                 data = base64
             }, RakaJson.Options)
         };
