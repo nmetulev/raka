@@ -59,7 +59,7 @@ jobs:
           dotnet-quality: 'preview'
 
       - name: Restore
-        run: dotnet restore
+        run: dotnet restore src/Raka.Cli/Raka.Cli.csproj
 
       - name: Build CLI (${{ matrix.runtime }})
         run: |
@@ -92,7 +92,7 @@ jobs:
           dotnet-quality: 'preview'
 
       - name: Restore
-        run: dotnet restore
+        run: dotnet restore src/Raka.DevTools/Raka.DevTools.csproj
 
       - name: Pack NuGet
         run: dotnet pack src/Raka.DevTools/Raka.DevTools.csproj --configuration Release --output artifacts/nuget

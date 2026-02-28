@@ -44,18 +44,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Raka.DevTools" Version="0.1.0" />
-  </ItemGroup>
-
-  <!--
-    When consuming via NuGet, the .props and .targets are auto-imported.
-    The lines below are only needed for ProjectReference during development.
-  -->
-  <!-- <ItemGroup>
     <ProjectReference Include="..\..\src\Raka.DevTools\Raka.DevTools.csproj" />
   </ItemGroup>
+
+  <!-- Simulate NuGet auto-import (these are auto-imported when consuming via NuGet) -->
   <Import Project="..\..\src\Raka.DevTools\build\Raka.DevTools.props" />
-  <Import Project="..\..\src\Raka.DevTools\build\Raka.DevTools.targets" /> -->
+  <Import Project="..\..\src\Raka.DevTools\build\Raka.DevTools.targets" />
 
   <!--
     Defining the "HasPackageAndPublishMenuAddedByProject" property here allows the Solution
