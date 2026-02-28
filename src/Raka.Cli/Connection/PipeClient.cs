@@ -33,7 +33,7 @@ internal sealed class PipeClient : IDisposable
             throw new InvalidOperationException("Not connected. Call ConnectAsync first.");
 
         // Write request as a single line
-        var json = JsonSerializer.Serialize(request, RakaJson.Options);
+        var json = JsonSerializer.Serialize(request, CliJsonContext.Default.RakaRequest);
         var requestBytes = Utf8NoBom.GetBytes(json + "\n");
         await _pipe.WriteAsync(requestBytes);
         await _pipe.FlushAsync();
@@ -56,20 +56,18 @@ internal sealed class PipeClient : IDisposable
             if (newlineIndex >= 0)
             {
                 var responseLine = text[..newlineIndex].TrimEnd('\r');
-                return JsonSerializer.Deserialize<RakaResponse>(responseLine, RakaJson.Options)
+                return JsonSerializer.Deserialize(responseLine, CliJsonContext.Default.RakaResponse)
                     ?? throw new IOException("Invalid response from DevTools");
             }
         }
     }
 
-    public async Task<RakaResponse> SendCommandAsync(string command, object? parameters = null)
+    public async Task<RakaResponse> SendCommandAsync(string command, JsonElement? parameters = null)
     {
         var request = new RakaRequest
         {
             Command = command,
-            Params = parameters != null
-                ? JsonSerializer.SerializeToElement(parameters, RakaJson.Options)
-                : null
+            Params = parameters
         };
 
         return await SendAsync(request);

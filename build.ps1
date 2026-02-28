@@ -60,11 +60,7 @@ if (-not $SkipCli) {
         dotnet publish $cliProject `
             --configuration $Configuration `
             --runtime $rid `
-            --self-contained true `
-            --output $outDir `
-            -p:PublishSingleFile=true `
-            -p:IncludeNativeLibrariesForSelfExtract=true `
-            -p:EnableCompressionInSingleFile=true
+            --output $outDir
 
         if ($LASTEXITCODE -ne 0) {
             Write-Error "CLI build failed for $rid"

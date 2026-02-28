@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.Text.Json;
 
 namespace Raka.Cli.Commands;
 
@@ -17,7 +18,7 @@ internal static class ClickCommand
         command.SetAction(async (parseResult) =>
         {
             var element = parseResult.GetValue(elementArg);
-            var parameters = new Dictionary<string, object> { ["element"] = element! };
+            var parameters = JsonSerializer.SerializeToElement(new ElementParams(element!), CliJsonContext.Default.ElementParams);
             Environment.ExitCode = await CommandHelpers.SendAndPrint(parseResult, Raka.Protocol.Commands.Click, parameters);
         });
 

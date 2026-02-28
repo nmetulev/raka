@@ -66,10 +66,6 @@ jobs:
           dotnet publish src/Raka.Cli/Raka.Cli.csproj `
             --configuration Release `
             --runtime ${{ matrix.runtime }} `
-            --self-contained true `
-            -p:PublishSingleFile=true `
-            -p:IncludeNativeLibrariesForSelfExtract=true `
-            -p:EnableCompressionInSingleFile=true `
             --output artifacts/cli/raka-${{ matrix.runtime }}
 
       - name: Zip CLI

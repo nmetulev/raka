@@ -1,5 +1,5 @@
 using System.CommandLine;
-using Raka.Protocol;
+using System.Text.Json;
 
 namespace Raka.Cli.Commands;
 
@@ -18,7 +18,7 @@ internal static class AncestorsCommand
         command.SetAction(async (parseResult) =>
         {
             var element = parseResult.GetValue(elementArg);
-            var parameters = new Dictionary<string, object> { ["element"] = element! };
+            var parameters = JsonSerializer.SerializeToElement(new ElementParams(element!), CliJsonContext.Default.ElementParams);
             Environment.ExitCode = await CommandHelpers.SendAndPrint(parseResult, Raka.Protocol.Commands.Ancestors, parameters);
         });
 

@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.Text.Json;
 
 namespace Raka.Cli.Commands;
 
@@ -28,13 +29,11 @@ internal static class ScreenshotCommand
             var mode = parseResult.GetValue(modeOption);
             var bg = parseResult.GetValue(bgOption);
 
-            var parameters = new Dictionary<string, object>();
-            if (element != null) parameters["element"] = element;
-            if (mode != null) parameters["mode"] = mode;
-            if (bg != null) parameters["background"] = bg;
+            var parameters = new ScreenshotParams(element, mode, bg);
+            var paramsJson = JsonSerializer.SerializeToElement(parameters, CliJsonContext.Default.ScreenshotParams);
 
             using var client = await CommandHelpers.GetConnectedClient(parseResult);
-            var response = await client.SendCommandAsync(Raka.Protocol.Commands.Screenshot, parameters.Count > 0 ? parameters : null);
+            var response = await client.SendCommandAsync(Raka.Protocol.Commands.Screenshot, paramsJson);
 
             if (!response.Success)
             {

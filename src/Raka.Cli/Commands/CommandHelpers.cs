@@ -92,7 +92,7 @@ internal static class CommandHelpers
     /// <summary>
     /// Sends a command and prints the result as JSON.
     /// </summary>
-    public static async Task<int> SendAndPrint(ParseResult parseResult, string command, object? parameters = null)
+    public static async Task<int> SendAndPrint(ParseResult parseResult, string command, JsonElement? parameters = null)
     {
         using var client = await GetConnectedClient(parseResult);
         var response = await client.SendCommandAsync(command, parameters);
@@ -105,7 +105,7 @@ internal static class CommandHelpers
 
         if (response.Data.HasValue)
         {
-            Console.WriteLine(JsonSerializer.Serialize(response.Data.Value, RakaJson.PrettyOptions));
+            Console.WriteLine(JsonSerializer.Serialize(response.Data.Value, CliJsonContext.Pretty.JsonElement));
         }
 
         return 0;

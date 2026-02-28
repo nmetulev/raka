@@ -31,7 +31,7 @@ internal sealed class SessionManager
         try
         {
             var json = File.ReadAllText(ActiveSessionFile);
-            var session = JsonSerializer.Deserialize<SessionInfo>(json);
+            var session = JsonSerializer.Deserialize(json, CliJsonContext.Default.SessionInfo);
 
             // Verify the target process is still alive
             if (session != null)
@@ -60,7 +60,7 @@ internal sealed class SessionManager
     public static void SaveActive(SessionInfo session)
     {
         Directory.CreateDirectory(SessionDir);
-        var json = JsonSerializer.Serialize(session, new JsonSerializerOptions { WriteIndented = true });
+        var json = JsonSerializer.Serialize(session, CliJsonContext.Pretty.SessionInfo);
         File.WriteAllText(ActiveSessionFile, json);
     }
 

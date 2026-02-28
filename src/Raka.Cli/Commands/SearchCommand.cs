@@ -1,5 +1,5 @@
 using System.CommandLine;
-using Raka.Protocol;
+using System.Text.Json;
 
 namespace Raka.Cli.Commands;
 
@@ -30,19 +30,15 @@ internal static class SearchCommand
             var text = parseResult.GetValue(textOption);
             var autoId = parseResult.GetValue(autoIdOption);
 
-            var parameters = new Dictionary<string, object>();
-            if (type != null) parameters["type"] = type;
-            if (name != null) parameters["name"] = name;
-            if (text != null) parameters["text"] = text;
-            if (autoId != null) parameters["automationId"] = autoId;
-
-            if (parameters.Count == 0)
+            if (type == null && name == null && text == null && autoId == null)
             {
                 Console.Error.WriteLine("Error: Specify at least one search criterion (--type, --name, --text, --automation-id)");
                 Environment.ExitCode = 1;
                 return;
             }
 
+            var p = new SearchParams(type, name, text, autoId);
+            var parameters = JsonSerializer.SerializeToElement(p, CliJsonContext.Default.SearchParams);
             Environment.ExitCode = await CommandHelpers.SendAndPrint(parseResult, Raka.Protocol.Commands.Search, parameters);
         });
 

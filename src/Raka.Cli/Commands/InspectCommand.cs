@@ -1,5 +1,5 @@
 using System.CommandLine;
-using Raka.Protocol;
+using System.Text.Json;
 
 namespace Raka.Cli.Commands;
 
@@ -24,14 +24,13 @@ internal static class InspectCommand
             var element = parseResult.GetValue(elementOption);
             var depth = parseResult.GetValue(depthOption);
 
-            var parameters = new Dictionary<string, object>();
-            if (element != null) parameters["element"] = element;
-            if (depth.HasValue) parameters["depth"] = depth.Value;
+            var p = new InspectParams(element, depth);
+            var parameters = JsonSerializer.SerializeToElement(p, CliJsonContext.Default.InspectParams);
 
             Environment.ExitCode = await CommandHelpers.SendAndPrint(
                 parseResult,
                 Raka.Protocol.Commands.Inspect,
-                parameters.Count > 0 ? parameters : null);
+                parameters);
         });
 
         return command;

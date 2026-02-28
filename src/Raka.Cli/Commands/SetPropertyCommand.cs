@@ -1,5 +1,5 @@
 using System.CommandLine;
-using Raka.Protocol;
+using System.Text.Json;
 
 namespace Raka.Cli.Commands;
 
@@ -25,13 +25,8 @@ internal static class SetPropertyCommand
             var property = parseResult.GetValue(propertyArg);
             var value = parseResult.GetValue(valueArg);
 
-            var parameters = new Dictionary<string, object>
-            {
-                ["element"] = element!,
-                ["property"] = property!,
-                ["value"] = value!
-            };
-
+            var p = new SetPropertyParams(element!, property!, value!);
+            var parameters = JsonSerializer.SerializeToElement(p, CliJsonContext.Default.SetPropertyParams);
             Environment.ExitCode = await CommandHelpers.SendAndPrint(parseResult, Raka.Protocol.Commands.SetProperty, parameters);
         });
 
