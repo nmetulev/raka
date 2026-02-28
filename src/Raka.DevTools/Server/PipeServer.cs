@@ -9,9 +9,12 @@ namespace Raka.DevTools.Server;
 /// <summary>
 /// Named pipe server that listens for CLI commands inside the WinUI 3 app.
 /// Runs on a background thread; dispatches to UI thread for visual tree operations.
+/// Uses raw byte I/O to avoid StreamReader/StreamWriter buffering issues with pipes.
 /// </summary>
 internal sealed class PipeServer : IDisposable
 {
+    private static readonly Encoding Utf8NoBom = new UTF8Encoding(false);
+
     private readonly string _pipeName;
     private readonly CommandRouter _router;
     private readonly DispatcherQueue _dispatcherQueue;
@@ -44,64 +47,103 @@ internal sealed class PipeServer : IDisposable
             try
             {
                 await pipe.WaitForConnectionAsync(ct);
-                // Handle each connection in its own task
-                _ = Task.Run(() => HandleConnection(pipe, ct), ct);
+                _ = HandleConnectionAsync(pipe, ct);
             }
             catch (OperationCanceledException)
             {
                 pipe.Dispose();
                 break;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine($"[Raka DevTools] Listen error: {ex.Message}");
                 pipe.Dispose();
             }
         }
     }
 
-    private async Task HandleConnection(NamedPipeServerStream pipe, CancellationToken ct)
+    private async Task HandleConnectionAsync(NamedPipeServerStream pipe, CancellationToken ct)
     {
         try
         {
             using (pipe)
-            using (var reader = new StreamReader(pipe, Encoding.UTF8))
-            using (var writer = new StreamWriter(pipe, Encoding.UTF8) { AutoFlush = true })
             {
+                var buffer = new byte[64 * 1024];
+                var leftover = string.Empty;
+
                 while (pipe.IsConnected && !ct.IsCancellationRequested)
                 {
-                    var line = await reader.ReadLineAsync(ct);
-                    if (line == null) break;
-
-                    RakaRequest? request;
+                    int bytesRead;
                     try
                     {
-                        request = JsonSerializer.Deserialize<RakaRequest>(line, RakaJson.Options);
+                        bytesRead = await pipe.ReadAsync(buffer, ct);
                     }
-                    catch (JsonException)
+                    catch (OperationCanceledException)
                     {
-                        var errorResponse = new RakaResponse
-                        {
-                            Success = false,
-                            Error = "Invalid JSON request"
-                        };
-                        await writer.WriteLineAsync(JsonSerializer.Serialize(errorResponse, RakaJson.Options));
-                        continue;
+                        break;
+                    }
+                    catch (IOException)
+                    {
+                        break;
                     }
 
-                    if (request == null) continue;
+                    if (bytesRead == 0) break;
 
-                    // Execute the command on the UI thread
-                    var response = await DispatchToUIThread(request);
-                    response.Id = request.Id;
+                    var text = leftover + Utf8NoBom.GetString(buffer, 0, bytesRead);
+                    var lines = text.Split('\n');
 
-                    await writer.WriteLineAsync(JsonSerializer.Serialize(response, RakaJson.Options));
+                    // Last element is either empty (if text ended with \n) or a partial line
+                    leftover = lines[^1];
+
+                    for (int i = 0; i < lines.Length - 1; i++)
+                    {
+                        var line = lines[i].TrimEnd('\r');
+                        if (string.IsNullOrWhiteSpace(line)) continue;
+
+                        var responseJson = await ProcessLine(line);
+                        var responseBytes = Utf8NoBom.GetBytes(responseJson + "\n");
+
+                        try
+                        {
+                            await pipe.WriteAsync(responseBytes, ct);
+                            await pipe.FlushAsync(ct);
+                        }
+                        catch (IOException)
+                        {
+                            return;
+                        }
+                    }
                 }
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // Connection broken — nothing to do
+            System.Diagnostics.Debug.WriteLine($"[Raka DevTools] Connection error: {ex.Message}");
         }
+    }
+
+    private async Task<string> ProcessLine(string line)
+    {
+        RakaRequest? request;
+        try
+        {
+            request = JsonSerializer.Deserialize<RakaRequest>(line, RakaJson.Options);
+        }
+        catch (JsonException ex)
+        {
+            var errorResponse = new RakaResponse { Success = false, Error = $"Invalid JSON: {ex.Message}" };
+            return JsonSerializer.Serialize(errorResponse, RakaJson.Options);
+        }
+
+        if (request == null)
+        {
+            var errorResponse = new RakaResponse { Success = false, Error = "Null request" };
+            return JsonSerializer.Serialize(errorResponse, RakaJson.Options);
+        }
+
+        var response = await DispatchToUIThread(request);
+        response.Id = request.Id;
+        return JsonSerializer.Serialize(response, RakaJson.Options);
     }
 
     private Task<RakaResponse> DispatchToUIThread(RakaRequest request)
