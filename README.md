@@ -7,10 +7,14 @@ Raka lets AI agents (and humans) see, inspect, modify, and interact with running
 ```
 raka inspect --app MyApp                          # See the full visual tree
 raka search -t Button --app MyApp                 # Find all buttons
+raka search --interactive --text "Save"           # Find clickable elements by text
 raka set-property e5 Background "#FF5500"         # Change a property live
 raka add-xaml e6 "<Button Content='New'/>"        # Inject XAML at runtime
 raka hot-reload src/MyApp/ --app MyApp             # Watch dir & live-reload all XAML
 raka screenshot -f screenshot.png                 # Pixel-perfect screenshot
+raka status --app MyApp                           # Current page, theme, window size
+raka navigate SettingsPage                        # Navigate to a page directly
+raka batch "click e1" "screenshot -f out.png"     # Run multiple commands at once
 raka tap-inspect --app Calculator                 # Inspect ANY WinUI 3 app (no NuGet)
 ```
 
@@ -24,7 +28,7 @@ Raka has two fundamentally different ways to connect to a WinUI 3 app. Choose ba
 
 Add the `Raka.DevTools` NuGet package to your app. Gives you **full read/write access**: inspect, modify properties, inject XAML, click buttons, take screenshots. Best for apps you're building.
 
-**All commands** work in this mode: `inspect`, `search`, `get-property`, `set-property`, `click`, `screenshot`, `add-xaml`, `remove`, `replace`, `hot-reload`, `ancestors`.
+**All commands** work in this mode: `inspect`, `search`, `get-property`, `set-property`, `click`, `screenshot`, `add-xaml`, `remove`, `replace`, `hot-reload`, `ancestors`, `status`, `navigate`, `batch`.
 
 ### 🔍 TAP Mode (read-only — any app)
 
@@ -206,9 +210,14 @@ raka search -t Button             # By type
 raka search -n GreetButton        # By x:Name
 raka search --text "Hello"        # By text content
 raka search --automation-id save  # By AutomationId
+raka search --class NavigationViewItem  # By full class name
+raka search --property Tag=settings     # By property value
+raka search --interactive               # Only clickable/toggleable elements
+raka search --visible                   # Only visible elements
+raka search --interactive --text "Save" # Combine filters (AND logic)
 ```
 
-Multiple criteria can be combined (AND logic).
+Multiple criteria can be combined (AND logic). The `--interactive` filter is especially useful for agents — it returns only elements that can be clicked, toggled, or selected (via UI Automation patterns), filtering out structural elements like ContentPresenter and TextBlock that aren't directly actionable.
 
 ---
 
@@ -318,12 +327,58 @@ Removes the element from the visual tree. The element and its children are no lo
 raka click e5                     # Invoke a button
 raka click e6                     # Toggle a checkbox
 raka click e7                     # Select a radio button
+raka click e3                     # Select a NavigationViewItem (triggers navigation)
 ```
 
 Uses the UI Automation peer system. Supports:
 - **Buttons / Hyperlinks / MenuItems** → Invoke
 - **CheckBoxes / ToggleSwitches** → Toggle
+- **NavigationViewItems** → Select (properly triggers `SelectionChanged` for navigation)
 - **RadioButtons / ListItems** → Select
+
+---
+
+### `navigate` — Navigate to a page
+
+```bash
+raka navigate SettingsPage --app MyApp           # Navigate by class name
+raka navigate MyApp.Pages.SettingsPage           # Navigate by full type name
+```
+
+Finds the first `Frame` in the visual tree and calls `Frame.Navigate()` directly. Also updates the `NavigationView.SelectedItem` if a matching navigation item is found (matches by `Tag`). More reliable than `click` for page navigation.
+
+---
+
+### `status` — Quick situational awareness
+
+```bash
+raka status --app MyApp
+```
+
+Returns current app state at a glance:
+
+```
+  Title:     My App
+  Size:      1872×1165
+  Theme:     Dark
+  Page:      MyApp.Pages.DashboardPage
+  Backdrop:  MicaBackdrop
+  Elements:  323
+```
+
+Shows window title, dimensions, current theme, active page (Frame content), backdrop type, and total element count in the visual tree.
+
+---
+
+### `batch` — Run multiple commands in one call
+
+```bash
+raka batch --app MyApp "navigate SettingsPage" "status" "click e5" "screenshot --mode render"
+```
+
+Executes commands sequentially over a single pipe connection — eliminates per-command startup overhead. Returns a JSON array with results for each command.
+
+Supported sub-commands: `click`, `screenshot`, `inspect`, `search`, `status`, `navigate`, `get-property`, `set-property`.
 
 ---
 
@@ -343,9 +398,11 @@ raka screenshot --mode render --bg "#1E1E1E" -f dark.png  # Render with backgrou
 | **capture** | `--mode capture` | `Windows.Graphics.Capture` — real screen pixels | Full window, includes Mica/Acrylic |
 | **render** | `--mode render` | `RenderTargetBitmap` — XAML render | Specific elements, works offscreen |
 
-**Default behavior** (auto mode): `capture` for full window, `render` for elements.
+**Default behavior** (auto mode): `capture` for full window, `render` for elements. **Exception:** If a Mica or Acrylic backdrop is detected, auto mode switches to `render` with a dark background — because `capture` mode sees through the transparent backdrop and produces a black image.
 
 The `--bg` option composites the render output onto a solid background color — useful when theme-aware text is invisible against the transparent backdrop.
+
+> **💡 Tip:** If your screenshots look black, your app likely uses `MicaBackdrop` or `DesktopAcrylicBackdrop`. Use `--mode render --bg "#1E1E1E"` for dark themes or `--bg "#FFFFFF"` for light themes. In auto mode, Raka detects this and switches automatically.
 
 ---
 
