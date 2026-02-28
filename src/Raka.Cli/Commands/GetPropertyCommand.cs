@@ -18,6 +18,7 @@ internal static class GetPropertyCommand
             propertyArg,
             allOption
         };
+        CommandHelpers.AddTargetOptions(command);
 
         command.SetAction(async (parseResult) =>
         {
@@ -36,7 +37,7 @@ internal static class GetPropertyCommand
             if (all) parameters["all"] = true;
             if (property != null) parameters["property"] = property;
 
-            Environment.ExitCode = await CommandHelpers.SendAndPrint(Raka.Protocol.Commands.GetProperty, parameters);
+            Environment.ExitCode = await CommandHelpers.SendAndPrint(parseResult, Raka.Protocol.Commands.GetProperty, parameters);
         });
 
         return command;

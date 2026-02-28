@@ -17,6 +17,7 @@ internal static class SetPropertyCommand
             propertyArg,
             valueArg
         };
+        CommandHelpers.AddTargetOptions(command);
 
         command.SetAction(async (parseResult) =>
         {
@@ -31,7 +32,7 @@ internal static class SetPropertyCommand
                 ["value"] = value!
             };
 
-            Environment.ExitCode = await CommandHelpers.SendAndPrint(Raka.Protocol.Commands.SetProperty, parameters);
+            Environment.ExitCode = await CommandHelpers.SendAndPrint(parseResult, Raka.Protocol.Commands.SetProperty, parameters);
         });
 
         return command;

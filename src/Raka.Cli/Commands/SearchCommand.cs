@@ -21,6 +21,7 @@ internal static class SearchCommand
             textOption,
             autoIdOption
         };
+        CommandHelpers.AddTargetOptions(command);
 
         command.SetAction(async (parseResult) =>
         {
@@ -42,7 +43,7 @@ internal static class SearchCommand
                 return;
             }
 
-            Environment.ExitCode = await CommandHelpers.SendAndPrint(Raka.Protocol.Commands.Search, parameters);
+            Environment.ExitCode = await CommandHelpers.SendAndPrint(parseResult, Raka.Protocol.Commands.Search, parameters);
         });
 
         return command;

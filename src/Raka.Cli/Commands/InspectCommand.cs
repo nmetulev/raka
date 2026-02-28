@@ -17,6 +17,7 @@ internal static class InspectCommand
             elementOption,
             depthOption
         };
+        CommandHelpers.AddTargetOptions(command);
 
         command.SetAction(async (parseResult) =>
         {
@@ -28,6 +29,7 @@ internal static class InspectCommand
             if (depth.HasValue) parameters["depth"] = depth.Value;
 
             Environment.ExitCode = await CommandHelpers.SendAndPrint(
+                parseResult,
                 Raka.Protocol.Commands.Inspect,
                 parameters.Count > 0 ? parameters : null);
         });

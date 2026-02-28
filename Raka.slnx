@@ -1,12 +1,21 @@
 <Solution>
+  <Configurations>
+    <Platform Name="Arm64" />
+  </Configurations>
   <Folder Name="/samples/">
     <Project Path="samples/SampleApp/SampleApp.csproj">
-      <Platform Project="x86" />
+      <Platform Solution="Debug|*" Project="ARM64" />
+      <Platform Solution="Release|*" Project="x86" />
+      <Deploy Solution="Debug|*" />
     </Project>
   </Folder>
   <Folder Name="/src/">
-    <Project Path="src/Raka.Cli/Raka.Cli.csproj" />
-    <Project Path="src/Raka.DevTools/Raka.DevTools.csproj" />
+    <Project Path="src/Raka.Cli/Raka.Cli.csproj">
+      <Platform Solution="Debug|*" Project="ARM64" />
+    </Project>
+    <Project Path="src/Raka.DevTools/Raka.DevTools.csproj">
+      <Platform Solution="Debug|*" Project="ARM64" />
+    </Project>
     <Project Path="src/Raka.Protocol/Raka.Protocol.csproj" />
   </Folder>
 </Solution>

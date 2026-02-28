@@ -13,12 +13,13 @@ internal static class AncestorsCommand
         {
             elementArg
         };
+        CommandHelpers.AddTargetOptions(command);
 
         command.SetAction(async (parseResult) =>
         {
             var element = parseResult.GetValue(elementArg);
             var parameters = new Dictionary<string, object> { ["element"] = element! };
-            Environment.ExitCode = await CommandHelpers.SendAndPrint(Raka.Protocol.Commands.Ancestors, parameters);
+            Environment.ExitCode = await CommandHelpers.SendAndPrint(parseResult, Raka.Protocol.Commands.Ancestors, parameters);
         });
 
         return command;

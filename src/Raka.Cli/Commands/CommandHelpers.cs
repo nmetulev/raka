@@ -1,3 +1,4 @@
+using System.CommandLine;
 using System.Diagnostics;
 using System.Text.Json;
 using Raka.Cli.Connection;
@@ -12,25 +13,78 @@ namespace Raka.Cli.Commands;
 internal static class CommandHelpers
 {
     /// <summary>
-    /// Gets a connected pipe client using the active session.
+    /// Global options that every command can use to target an app.
+    /// If not provided, falls back to the saved session.
     /// </summary>
-    public static async Task<PipeClient> GetConnectedClient()
-    {
-        var session = SessionManager.LoadActive()
-            ?? throw new InvalidOperationException(
-                "No active connection. Run 'raka connect --name <AppName>' first.");
+    public static Option<string?> NameOption { get; } = new("--name") { Description = "Target app by process name or window title" };
+    public static Option<int?> PidOption { get; } = new("--pid") { Description = "Target app by process ID" };
 
-        var client = new PipeClient(session.PipeName);
+    /// <summary>
+    /// Adds --name and --pid options to a command.
+    /// </summary>
+    public static void AddTargetOptions(Command command)
+    {
+        command.Add(NameOption);
+        command.Add(PidOption);
+    }
+
+    /// <summary>
+    /// Resolves the target app: uses --name/--pid if provided, otherwise falls back to saved session.
+    /// Opens a fresh pipe connection each time (no long-running process needed).
+    /// </summary>
+    public static async Task<PipeClient> GetConnectedClient(ParseResult parseResult)
+    {
+        var name = parseResult.GetValue(NameOption);
+        var pid = parseResult.GetValue(PidOption);
+
+        string pipeName;
+        string processLabel;
+
+        if (name != null || pid != null)
+        {
+            // Explicit target — resolve process and connect
+            var process = FindProcess(name, pid)
+                ?? throw new InvalidOperationException(
+                    name != null
+                        ? $"No process found matching '{name}'. Is the app running?"
+                        : $"No process found with PID {pid}.");
+
+            pipeName = PipeNames.ForProcess(process.Id);
+            processLabel = $"{process.ProcessName} (PID {process.Id})";
+
+            // Save as active session for convenience
+            SessionManager.SaveActive(new SessionManager.SessionInfo
+            {
+                PipeName = pipeName,
+                ProcessId = process.Id,
+                ProcessName = process.ProcessName,
+                WindowTitle = process.MainWindowTitle,
+                ConnectedAt = DateTime.UtcNow
+            });
+        }
+        else
+        {
+            // No explicit target — use saved session
+            var session = SessionManager.LoadActive()
+                ?? throw new InvalidOperationException(
+                    "No target app specified. Use --name <AppName> or --pid <PID>.\n" +
+                    "Example: raka inspect --name MyApp");
+
+            pipeName = session.PipeName;
+            processLabel = $"{session.ProcessName ?? "app"} (PID {session.ProcessId})";
+        }
+
+        var client = new PipeClient(pipeName);
         try
         {
             await client.ConnectAsync(3000);
         }
         catch (TimeoutException)
         {
-            SessionManager.ClearActive();
             throw new InvalidOperationException(
-                $"Cannot connect to {session.ProcessName ?? "app"} (PID {session.ProcessId}). " +
-                "The app may have closed. Run 'raka connect' again.");
+                $"Cannot connect to {processLabel}. " +
+                "Make sure the app has Raka.DevTools NuGet added:\n" +
+                "  window.UseRakaDevTools();");
         }
         return client;
     }
@@ -38,9 +92,9 @@ internal static class CommandHelpers
     /// <summary>
     /// Sends a command and prints the result as JSON.
     /// </summary>
-    public static async Task<int> SendAndPrint(string command, object? parameters = null)
+    public static async Task<int> SendAndPrint(ParseResult parseResult, string command, object? parameters = null)
     {
-        using var client = await GetConnectedClient();
+        using var client = await GetConnectedClient(parseResult);
         var response = await client.SendCommandAsync(command, parameters);
 
         if (!response.Success)
@@ -70,11 +124,9 @@ internal static class CommandHelpers
 
         if (name != null)
         {
-            // Try exact process name match first
             var procs = Process.GetProcessesByName(name);
             if (procs.Length > 0) return procs[0];
 
-            // Try partial match on process name or window title
             var all = Process.GetProcesses();
             foreach (var p in all)
             {
