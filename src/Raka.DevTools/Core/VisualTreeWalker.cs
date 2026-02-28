@@ -1,5 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
+using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Media;
 using Raka.Protocol;
 
@@ -48,10 +50,11 @@ internal sealed class VisualTreeWalker
     /// <summary>
     /// Searches the visual tree for elements matching the given criteria.
     /// </summary>
-    public List<ElementNode> Search(DependencyObject root, string? type, string? name, string? text, string? automationId)
+    public List<ElementNode> Search(DependencyObject root, string? type, string? name, string? text, string? automationId,
+        string? className = null, bool interactive = false, bool visibleOnly = false, string? property = null)
     {
         var results = new List<ElementNode>();
-        SearchRecursive(root, type, name, text, automationId, results);
+        SearchRecursive(root, type, name, text, automationId, className, interactive, visibleOnly, property, results);
         return results;
     }
 
@@ -153,7 +156,8 @@ internal sealed class VisualTreeWalker
         };
     }
 
-    private void SearchRecursive(DependencyObject obj, string? type, string? name, string? text, string? automationId, List<ElementNode> results)
+    private void SearchRecursive(DependencyObject obj, string? type, string? name, string? text, string? automationId,
+        string? className, bool interactive, bool visibleOnly, string? property, List<ElementNode> results)
     {
         bool matches = true;
 
@@ -161,6 +165,12 @@ internal sealed class VisualTreeWalker
         {
             var typeName = obj.GetType().Name;
             matches = typeName.Equals(type, StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (matches && className != null)
+        {
+            var fullName = obj.GetType().FullName ?? obj.GetType().Name;
+            matches = fullName.Contains(className, StringComparison.OrdinalIgnoreCase);
         }
 
         if (matches && name != null && obj is FrameworkElement fe1)
@@ -188,6 +198,32 @@ internal sealed class VisualTreeWalker
             matches = HasTextContent(obj, text);
         }
 
+        // Visible-only filter
+        if (matches && visibleOnly && obj is FrameworkElement feVis)
+        {
+            matches = feVis.Visibility == Visibility.Visible;
+        }
+        else if (matches && visibleOnly && obj is not FrameworkElement)
+        {
+            matches = false;
+        }
+
+        // Interactive filter — only elements with invoke, toggle, or select automation patterns
+        if (matches && interactive && obj is UIElement uiEl)
+        {
+            matches = IsInteractive(uiEl);
+        }
+        else if (matches && interactive && obj is not UIElement)
+        {
+            matches = false;
+        }
+
+        // Property filter (e.g., "Tag=dashboard", "IsEnabled=True")
+        if (matches && property != null)
+        {
+            matches = MatchesProperty(obj, property);
+        }
+
         if (matches)
         {
             results.Add(CreateNode(obj, includeChildren: false));
@@ -196,7 +232,7 @@ internal sealed class VisualTreeWalker
         int childCount = VisualTreeHelper.GetChildrenCount(obj);
         for (int i = 0; i < childCount; i++)
         {
-            SearchRecursive(VisualTreeHelper.GetChild(obj, i), type, name, text, automationId, results);
+            SearchRecursive(VisualTreeHelper.GetChild(obj, i), type, name, text, automationId, className, interactive, visibleOnly, property, results);
         }
     }
 
@@ -229,5 +265,32 @@ internal sealed class VisualTreeWalker
         }
 
         return false;
+    }
+
+    private static bool IsInteractive(UIElement element)
+    {
+        var peer = FrameworkElementAutomationPeer.CreatePeerForElement(element);
+        if (peer == null) return false;
+        return peer.GetPattern(PatternInterface.Invoke) != null
+            || peer.GetPattern(PatternInterface.Toggle) != null
+            || peer.GetPattern(PatternInterface.SelectionItem) != null
+            || peer.GetPattern(PatternInterface.ExpandCollapse) != null
+            || peer.GetPattern(PatternInterface.Value) != null;
+    }
+
+    private static bool MatchesProperty(DependencyObject obj, string propertyFilter)
+    {
+        // Format: "PropertyName=Value" (e.g., "Tag=dashboard", "IsEnabled=True")
+        var eqIndex = propertyFilter.IndexOf('=');
+        if (eqIndex < 1) return false;
+
+        var propName = propertyFilter[..eqIndex];
+        var expected = propertyFilter[(eqIndex + 1)..];
+
+        var prop = obj.GetType().GetProperty(propName);
+        if (prop == null) return false;
+
+        var val = prop.GetValue(obj)?.ToString();
+        return val != null && val.Equals(expected, StringComparison.OrdinalIgnoreCase);
     }
 }

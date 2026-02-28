@@ -124,6 +124,8 @@ public static class Commands
     public const string AddXaml = "add-xaml";
     public const string RemoveElement = "remove";
     public const string ReplaceXaml = "replace";
+    public const string Status = "status";
+    public const string Navigate = "navigate";
 }
 
 /// <summary>

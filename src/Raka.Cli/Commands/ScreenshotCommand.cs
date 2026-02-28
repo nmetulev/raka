@@ -67,6 +67,12 @@ internal static class ScreenshotCommand
                 Console.WriteLine($"Use -f to save: raka screenshot -f output.png");
                 Console.WriteLine($"Modes: --mode capture (pixel-perfect) | --mode render (offscreen, use --bg '#FFF' for background)");
             }
+
+            // Show hint if backdrop was auto-detected
+            if (data.TryGetProperty("hint", out var hintProp) && hintProp.ValueKind == JsonValueKind.String)
+            {
+                Console.Error.WriteLine($"💡 {hintProp.GetString()}");
+            }
         });
 
         return command;

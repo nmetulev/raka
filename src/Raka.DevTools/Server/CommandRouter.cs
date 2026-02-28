@@ -43,6 +43,8 @@ internal sealed class CommandRouter
                 Commands.AddXaml => HandleAddXaml(request.Params),
                 Commands.RemoveElement => HandleRemove(request.Params),
                 Commands.ReplaceXaml => HandleReplace(request.Params),
+                Commands.Status => HandleStatus(),
+                Commands.Navigate => HandleNavigate(request.Params),
                 _ => new RakaResponse { Success = false, Error = $"Unknown command: {request.Command}" }
             };
         }
@@ -114,7 +116,8 @@ internal sealed class CommandRouter
         if (root == null)
             return new RakaResponse { Success = false, Error = "No window content available" };
 
-        string? type = null, name = null, text = null, automationId = null;
+        string? type = null, name = null, text = null, automationId = null, className = null, property = null;
+        bool interactive = false, visibleOnly = false;
 
         if (parameters.HasValue)
         {
@@ -126,12 +129,21 @@ internal sealed class CommandRouter
                 text = textProp.GetString();
             if (parameters.Value.TryGetProperty("automationId", out var autoProp))
                 automationId = autoProp.GetString();
+            if (parameters.Value.TryGetProperty("className", out var classProp))
+                className = classProp.GetString();
+            if (parameters.Value.TryGetProperty("interactive", out var interProp))
+                interactive = interProp.GetBoolean();
+            if (parameters.Value.TryGetProperty("visibleOnly", out var visProp))
+                visibleOnly = visProp.GetBoolean();
+            if (parameters.Value.TryGetProperty("property", out var propProp))
+                property = propProp.GetString();
         }
 
-        if (type == null && name == null && text == null && automationId == null)
-            return new RakaResponse { Success = false, Error = "Specify at least one search criterion: type, name, text, or automationId" };
+        if (type == null && name == null && text == null && automationId == null &&
+            className == null && !interactive && !visibleOnly && property == null)
+            return new RakaResponse { Success = false, Error = "Specify at least one search criterion: type, name, text, automationId, className, interactive, visibleOnly, or property" };
 
-        var results = _walker.Search(root, type, name, text, automationId);
+        var results = _walker.Search(root, type, name, text, automationId, className, interactive, visibleOnly, property);
 
         return new RakaResponse
         {
@@ -320,8 +332,31 @@ internal sealed class CommandRouter
         }
 
         // Auto mode: capture for whole window, render for specific elements
+        // Exception: Mica/Acrylic backdrops produce black images in capture mode
+        string? hint = null;
         if (mode == "auto")
-            mode = elementId == null ? "capture" : "render";
+        {
+            if (elementId != null)
+            {
+                mode = "render";
+            }
+            else if (_window?.SystemBackdrop != null)
+            {
+                mode = "render";
+                background ??= "#1E1E1E"; // dark default for backdrop apps
+                hint = "Auto-switched to render mode (Mica/Acrylic backdrop detected). " +
+                       "Use --mode capture to override, or --bg to change background color.";
+            }
+            else
+            {
+                mode = "capture";
+            }
+        }
+        else if (mode == "capture" && elementId == null && _window?.SystemBackdrop != null)
+        {
+            hint = "Warning: Mica/Acrylic backdrop detected — capture mode may produce a black image. " +
+                   "Try --mode render --bg \"#1E1E1E\" for reliable results.";
+        }
 
         // Allow the layout pass to complete after any recent XAML changes
         await Task.Delay(50);
@@ -403,6 +438,7 @@ internal sealed class CommandRouter
                 format = "png",
                 encoding = "base64",
                 mode,
+                hint,
                 data = base64
             }, RakaJson.Options)
         };
@@ -634,6 +670,168 @@ internal sealed class CommandRouter
         {
             if (parent is T match) return match;
             parent = VisualTreeHelper.GetParent(parent);
+        }
+        return null;
+    }
+
+    private RakaResponse HandleStatus()
+    {
+        var title = _window?.Title;
+        var width = _window?.AppWindow?.Size.Width;
+        var height = _window?.AppWindow?.Size.Height;
+
+        // Find the current page by looking for Frame elements
+        string? currentPage = null;
+        string? theme = null;
+        int elementCount = 0;
+
+        var root = GetRoot();
+        if (root != null)
+        {
+            CountAndDiscover(root, ref elementCount, ref currentPage);
+        }
+
+        if (root is FrameworkElement rootFe)
+        {
+            theme = rootFe.ActualTheme.ToString();
+        }
+
+        string? backdropType = _window?.SystemBackdrop?.GetType().Name;
+
+        return new RakaResponse
+        {
+            Success = true,
+            Data = JsonSerializer.SerializeToElement(new
+            {
+                title,
+                width,
+                height,
+                theme,
+                currentPage,
+                backdropType,
+                elementCount
+            }, RakaJson.Options)
+        };
+    }
+
+    private static void CountAndDiscover(DependencyObject obj, ref int count, ref string? currentPage)
+    {
+        count++;
+        if (obj is Microsoft.UI.Xaml.Controls.Frame frame && frame.Content != null)
+        {
+            currentPage = frame.Content.GetType().FullName;
+        }
+        int childCount = VisualTreeHelper.GetChildrenCount(obj);
+        for (int i = 0; i < childCount; i++)
+        {
+            CountAndDiscover(VisualTreeHelper.GetChild(obj, i), ref count, ref currentPage);
+        }
+    }
+
+    private RakaResponse HandleNavigate(JsonElement? parameters)
+    {
+        if (!parameters.HasValue || !parameters.Value.TryGetProperty("page", out var pageProp))
+            return new RakaResponse { Success = false, Error = "Missing 'page' parameter" };
+
+        var pageName = pageProp.GetString()!;
+
+        var root = GetRoot();
+        if (root == null)
+            return new RakaResponse { Success = false, Error = "No window content available" };
+
+        // Find Frame elements in the tree
+        var frame = FindFrame(root);
+        if (frame == null)
+            return new RakaResponse { Success = false, Error = "No Frame element found in the visual tree" };
+
+        // Resolve the page type by searching loaded assemblies
+        Type? pageType = null;
+        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            // Try exact match first
+            pageType = assembly.GetType(pageName);
+            if (pageType != null) break;
+
+            // Try partial match (just the class name without namespace)
+            foreach (var type in assembly.GetTypes())
+            {
+                if (type.Name.Equals(pageName, StringComparison.OrdinalIgnoreCase) &&
+                    typeof(Microsoft.UI.Xaml.Controls.Page).IsAssignableFrom(type))
+                {
+                    pageType = type;
+                    break;
+                }
+            }
+            if (pageType != null) break;
+        }
+
+        if (pageType == null)
+            return new RakaResponse { Success = false, Error = $"Page type '{pageName}' not found. Use the full type name (e.g., MyApp.Pages.SettingsPage) or just the class name." };
+
+        frame.Navigate(pageType);
+
+        // Also update NavigationView selection if one exists
+        var navView = FindDescendant<NavigationView>(root);
+        if (navView != null)
+        {
+            foreach (var menuItem in navView.MenuItems)
+            {
+                if (menuItem is NavigationViewItem navItem)
+                {
+                    var tag = navItem.Tag?.ToString();
+                    if (tag != null && pageType.Name.Contains(tag, StringComparison.OrdinalIgnoreCase))
+                    {
+                        navView.SelectedItem = navItem;
+                        break;
+                    }
+                }
+            }
+            foreach (var menuItem in navView.FooterMenuItems)
+            {
+                if (menuItem is NavigationViewItem navItem)
+                {
+                    var tag = navItem.Tag?.ToString();
+                    if (tag != null && pageType.Name.Contains(tag, StringComparison.OrdinalIgnoreCase))
+                    {
+                        navView.SelectedItem = navItem;
+                        break;
+                    }
+                }
+            }
+        }
+
+        return new RakaResponse
+        {
+            Success = true,
+            Data = JsonSerializer.SerializeToElement(new
+            {
+                navigated = true,
+                page = pageType.FullName,
+                frame = frame.Name ?? "(unnamed)"
+            }, RakaJson.Options)
+        };
+    }
+
+    private static Microsoft.UI.Xaml.Controls.Frame? FindFrame(DependencyObject obj)
+    {
+        if (obj is Microsoft.UI.Xaml.Controls.Frame frame) return frame;
+        int childCount = VisualTreeHelper.GetChildrenCount(obj);
+        for (int i = 0; i < childCount; i++)
+        {
+            var result = FindFrame(VisualTreeHelper.GetChild(obj, i));
+            if (result != null) return result;
+        }
+        return null;
+    }
+
+    private static T? FindDescendant<T>(DependencyObject obj) where T : DependencyObject
+    {
+        if (obj is T match) return match;
+        int childCount = VisualTreeHelper.GetChildrenCount(obj);
+        for (int i = 0; i < childCount; i++)
+        {
+            var result = FindDescendant<T>(VisualTreeHelper.GetChild(obj, i));
+            if (result != null) return result;
         }
         return null;
     }
