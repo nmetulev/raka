@@ -301,57 +301,72 @@ internal sealed class CommandRouter
         if (mode == "auto")
             mode = elementId == null ? "capture" : "render";
 
+        // Allow the layout pass to complete after any recent XAML changes
+        await Task.Delay(50);
+
         byte[] pngBytes;
         int width, height;
 
-        if (mode == "capture")
+        try
         {
-            if (_window == null)
-                throw new InvalidOperationException("No window available");
+            if (mode == "capture")
+            {
+                if (_window == null)
+                    throw new InvalidOperationException("No window available");
 
-            if (elementId != null)
-            {
-                var el = _walker.GetElement(elementId) as UIElement
-                    ?? throw new ArgumentException($"Element '{elementId}' is not a UIElement or not found");
-                (pngBytes, width, height) = await ScreenCapturer.CaptureElementFromWindowAsync(_window, el);
+                if (elementId != null)
+                {
+                    var el = _walker.GetElement(elementId) as UIElement
+                        ?? throw new ArgumentException($"Element '{elementId}' is not a UIElement or not found");
+                    (pngBytes, width, height) = await ScreenCapturer.CaptureElementFromWindowAsync(_window, el);
+                }
+                else
+                {
+                    (pngBytes, width, height) = await ScreenCapturer.CaptureWindowAsync(_window);
+                }
             }
-            else
+            else // render mode (RenderTargetBitmap)
             {
-                (pngBytes, width, height) = await ScreenCapturer.CaptureWindowAsync(_window);
+                UIElement target;
+                if (elementId != null)
+                {
+                    var element = _walker.GetElement(elementId)
+                        ?? throw new ArgumentException($"Element '{elementId}' not found. Run 'inspect' first.");
+                    if (element is not UIElement uiEl)
+                        return new RakaResponse { Success = false, Error = $"Element {elementId} ({element.GetType().Name}) is not a UIElement" };
+                    target = uiEl;
+                }
+                else
+                {
+                    target = _window?.Content as UIElement
+                        ?? throw new InvalidOperationException("No window content available");
+                }
+
+                var rtb = new RenderTargetBitmap();
+                await rtb.RenderAsync(target);
+
+                var pixelBuffer = await rtb.GetPixelsAsync();
+                var pixels = pixelBuffer.ToArray();
+                width = rtb.PixelWidth;
+                height = rtb.PixelHeight;
+
+                if (background != null)
+                {
+                    var (r, g, b) = ScreenCapturer.ParseHexColor(background);
+                    ScreenCapturer.ApplyBackground(pixels, r, g, b);
+                }
+
+                pngBytes = await ScreenCapturer.EncodePngFromPixelsAsync(pixels, width, height);
             }
         }
-        else // render mode (RenderTargetBitmap)
+        catch (System.Runtime.InteropServices.COMException ex)
         {
-            UIElement target;
-            if (elementId != null)
+            return new RakaResponse
             {
-                var element = _walker.GetElement(elementId)
-                    ?? throw new ArgumentException($"Element '{elementId}' not found. Run 'inspect' first.");
-                if (element is not UIElement uiEl)
-                    return new RakaResponse { Success = false, Error = $"Element {elementId} ({element.GetType().Name}) is not a UIElement" };
-                target = uiEl;
-            }
-            else
-            {
-                target = _window?.Content as UIElement
-                    ?? throw new InvalidOperationException("No window content available");
-            }
-
-            var rtb = new RenderTargetBitmap();
-            await rtb.RenderAsync(target);
-
-            var pixelBuffer = await rtb.GetPixelsAsync();
-            var pixels = pixelBuffer.ToArray();
-            width = rtb.PixelWidth;
-            height = rtb.PixelHeight;
-
-            if (background != null)
-            {
-                var (r, g, b) = ScreenCapturer.ParseHexColor(background);
-                ScreenCapturer.ApplyBackground(pixels, r, g, b);
-            }
-
-            pngBytes = await ScreenCapturer.EncodePngFromPixelsAsync(pixels, width, height);
+                Success = false,
+                Error = $"Screenshot failed (COM error 0x{ex.HResult:X8}): {ex.Message}. " +
+                        "If you just injected XAML, wait a moment and retry."
+            };
         }
 
         var base64 = Convert.ToBase64String(pngBytes);
@@ -413,6 +428,10 @@ internal sealed class CommandRouter
         {
             viewbox.Child = uiElement;
         }
+        else if (parent is ContentPresenter cpAdd)
+        {
+            cpAdd.Content = uiElement;
+        }
         else
         {
             return new RakaResponse { Success = false, Error = $"Cannot add children to {parent.GetType().Name}. Use a Panel, ContentControl, or Border." };
@@ -460,6 +479,10 @@ internal sealed class CommandRouter
         else if (parent is Viewbox viewbox)
         {
             viewbox.Child = null;
+        }
+        else if (parent is ContentPresenter cpRem)
+        {
+            cpRem.Content = null;
         }
         else
         {
@@ -517,6 +540,10 @@ internal sealed class CommandRouter
         else if (parent is Viewbox viewbox)
         {
             viewbox.Child = newElement;
+        }
+        else if (parent is ContentPresenter cp)
+        {
+            cp.Content = newElement;
         }
         else
         {
