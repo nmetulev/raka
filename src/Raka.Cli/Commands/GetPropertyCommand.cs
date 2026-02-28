@@ -1,0 +1,44 @@
+using System.CommandLine;
+using Raka.Protocol;
+
+namespace Raka.Cli.Commands;
+
+internal static class GetPropertyCommand
+{
+    public static Command Create()
+    {
+        var elementArg = new Argument<string>("element") { Description = "Element ID (e.g., e5)" };
+        var propertyArg = new Argument<string?>("property") { Description = "Property name (e.g., Background, Margin)" };
+        var allOption = new Option<bool>("-a") { Description = "List all properties" };
+        allOption.Aliases.Add("--all");
+
+        var command = new Command("get-property", "Read property values from an element")
+        {
+            elementArg,
+            propertyArg,
+            allOption
+        };
+
+        command.SetAction(async (parseResult) =>
+        {
+            var element = parseResult.GetValue(elementArg);
+            var property = parseResult.GetValue(propertyArg);
+            var all = parseResult.GetValue(allOption);
+
+            if (!all && property == null)
+            {
+                Console.Error.WriteLine("Error: Specify a property name or use --all");
+                Environment.ExitCode = 1;
+                return;
+            }
+
+            var parameters = new Dictionary<string, object> { ["element"] = element! };
+            if (all) parameters["all"] = true;
+            if (property != null) parameters["property"] = property;
+
+            Environment.ExitCode = await CommandHelpers.SendAndPrint(Raka.Protocol.Commands.GetProperty, parameters);
+        });
+
+        return command;
+    }
+}
