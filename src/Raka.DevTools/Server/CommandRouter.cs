@@ -3,6 +3,9 @@ using System.Text.Json;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Automation.Provider;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Markup;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Raka.DevTools.Core;
 using Raka.Protocol;
@@ -37,6 +40,9 @@ internal sealed class CommandRouter
                 Commands.Ancestors => HandleAncestors(request.Params),
                 Commands.Click => HandleClick(request.Params),
                 Commands.Screenshot => await HandleScreenshotAsync(request.Params),
+                Commands.AddXaml => HandleAddXaml(request.Params),
+                Commands.RemoveElement => HandleRemove(request.Params),
+                Commands.ReplaceXaml => HandleReplace(request.Params),
                 _ => new RakaResponse { Success = false, Error = $"Unknown command: {request.Command}" }
             };
         }
@@ -363,6 +369,195 @@ internal sealed class CommandRouter
                 data = base64
             }, RakaJson.Options)
         };
+    }
+
+    private RakaResponse HandleAddXaml(JsonElement? parameters)
+    {
+        if (!parameters.HasValue)
+            return new RakaResponse { Success = false, Error = "Missing parameters" };
+
+        if (!parameters.Value.TryGetProperty("parent", out var parentProp))
+            return new RakaResponse { Success = false, Error = "Missing 'parent' element ID" };
+        if (!parameters.Value.TryGetProperty("xaml", out var xamlProp))
+            return new RakaResponse { Success = false, Error = "Missing 'xaml' parameter" };
+
+        var parentId = parentProp.GetString()!;
+        var xaml = xamlProp.GetString()!;
+        int? index = null;
+        if (parameters.Value.TryGetProperty("index", out var indexProp))
+            index = indexProp.GetInt32();
+
+        var parent = _walker.GetElement(parentId)
+            ?? throw new ArgumentException($"Element '{parentId}' not found. Run 'inspect' first.");
+
+        var parsed = ParseXaml(xaml);
+        if (parsed is not UIElement uiElement)
+            return new RakaResponse { Success = false, Error = $"Parsed XAML produced {parsed.GetType().Name}, expected a UIElement" };
+
+        if (parent is Panel panel)
+        {
+            if (index.HasValue)
+                panel.Children.Insert(index.Value, uiElement);
+            else
+                panel.Children.Add(uiElement);
+        }
+        else if (parent is ContentControl cc)
+        {
+            cc.Content = uiElement;
+        }
+        else if (parent is Border border)
+        {
+            border.Child = uiElement;
+        }
+        else if (parent is Viewbox viewbox)
+        {
+            viewbox.Child = uiElement;
+        }
+        else
+        {
+            return new RakaResponse { Success = false, Error = $"Cannot add children to {parent.GetType().Name}. Use a Panel, ContentControl, or Border." };
+        }
+
+        // Walk the new element so it gets an ID
+        var node = _walker.WalkFrom(uiElement, 2);
+
+        return new RakaResponse
+        {
+            Success = true,
+            Data = JsonSerializer.SerializeToElement(node, RakaJson.Options)
+        };
+    }
+
+    private RakaResponse HandleRemove(JsonElement? parameters)
+    {
+        if (!parameters.HasValue || !parameters.Value.TryGetProperty("element", out var elemProp))
+            return new RakaResponse { Success = false, Error = "Missing 'element' parameter" };
+
+        var elementId = elemProp.GetString()!;
+        var element = _walker.GetElement(elementId)
+            ?? throw new ArgumentException($"Element '{elementId}' not found. Run 'inspect' first.");
+
+        if (element is not UIElement uiElement)
+            return new RakaResponse { Success = false, Error = $"Element {elementId} ({element.GetType().Name}) is not a UIElement" };
+
+        var parent = VisualTreeHelper.GetParent(element);
+        if (parent == null)
+            return new RakaResponse { Success = false, Error = "Cannot remove root element" };
+
+        string parentType = parent.GetType().Name;
+        if (parent is Panel panel)
+        {
+            panel.Children.Remove(uiElement);
+        }
+        else if (parent is ContentControl cc)
+        {
+            cc.Content = null;
+        }
+        else if (parent is Border border)
+        {
+            border.Child = null;
+        }
+        else if (parent is Viewbox viewbox)
+        {
+            viewbox.Child = null;
+        }
+        else
+        {
+            return new RakaResponse { Success = false, Error = $"Cannot remove from {parentType}. Parent is not a Panel, ContentControl, or Border." };
+        }
+
+        return new RakaResponse
+        {
+            Success = true,
+            Data = JsonSerializer.SerializeToElement(new { removed = elementId, from = parentType }, RakaJson.Options)
+        };
+    }
+
+    private RakaResponse HandleReplace(JsonElement? parameters)
+    {
+        if (!parameters.HasValue)
+            return new RakaResponse { Success = false, Error = "Missing parameters" };
+
+        if (!parameters.Value.TryGetProperty("element", out var elemProp))
+            return new RakaResponse { Success = false, Error = "Missing 'element' parameter" };
+        if (!parameters.Value.TryGetProperty("xaml", out var xamlProp))
+            return new RakaResponse { Success = false, Error = "Missing 'xaml' parameter" };
+
+        var elementId = elemProp.GetString()!;
+        var xaml = xamlProp.GetString()!;
+
+        var element = _walker.GetElement(elementId)
+            ?? throw new ArgumentException($"Element '{elementId}' not found. Run 'inspect' first.");
+
+        if (element is not UIElement uiElement)
+            return new RakaResponse { Success = false, Error = $"Element {elementId} ({element.GetType().Name}) is not a UIElement" };
+
+        var parent = VisualTreeHelper.GetParent(element);
+        if (parent == null)
+            return new RakaResponse { Success = false, Error = "Cannot replace root element" };
+
+        var parsed = ParseXaml(xaml);
+        if (parsed is not UIElement newElement)
+            return new RakaResponse { Success = false, Error = $"Parsed XAML produced {parsed.GetType().Name}, expected a UIElement" };
+
+        if (parent is Panel panel)
+        {
+            var idx = panel.Children.IndexOf(uiElement);
+            panel.Children.RemoveAt(idx);
+            panel.Children.Insert(idx, newElement);
+        }
+        else if (parent is ContentControl cc)
+        {
+            cc.Content = newElement;
+        }
+        else if (parent is Border border)
+        {
+            border.Child = newElement;
+        }
+        else if (parent is Viewbox viewbox)
+        {
+            viewbox.Child = newElement;
+        }
+        else
+        {
+            return new RakaResponse { Success = false, Error = $"Cannot replace in {parent.GetType().Name}" };
+        }
+
+        var node = _walker.WalkFrom(newElement, 2);
+
+        return new RakaResponse
+        {
+            Success = true,
+            Data = JsonSerializer.SerializeToElement(node, RakaJson.Options)
+        };
+    }
+
+    /// <summary>
+    /// Parses a XAML string into a UIElement. Adds default namespace declarations if missing.
+    /// </summary>
+    private static DependencyObject ParseXaml(string xaml)
+    {
+        // If the XAML doesn't have xmlns, wrap with default WinUI namespaces
+        if (!xaml.Contains("xmlns"))
+        {
+            // Find the first tag name to inject namespaces
+            var firstGt = xaml.IndexOf('>');
+            var firstSpace = xaml.IndexOf(' ');
+            int insertPos;
+
+            if (firstSpace > 0 && firstSpace < firstGt)
+                insertPos = firstSpace;
+            else if (firstGt > 0)
+                insertPos = firstGt;
+            else
+                throw new ArgumentException("Invalid XAML: no closing '>' found");
+
+            var ns = " xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\"" +
+                     " xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\"";
+            xaml = xaml.Insert(insertPos, ns);
+        }
+
+        return (DependencyObject)XamlReader.Load(xaml);
     }
 
     private DependencyObject? GetRoot()

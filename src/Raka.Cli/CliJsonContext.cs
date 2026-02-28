@@ -21,6 +21,8 @@ namespace Raka.Cli;
 [JsonSerializable(typeof(SetPropertyParams))]
 [JsonSerializable(typeof(ElementParams))]
 [JsonSerializable(typeof(ScreenshotParams))]
+[JsonSerializable(typeof(AddXamlParams))]
+[JsonSerializable(typeof(ReplaceXamlParams))]
 internal partial class CliJsonContext : JsonSerializerContext
 {
     private static CliJsonContext? _pretty;
@@ -51,3 +53,7 @@ internal record SetPropertyParams(string Element, string Property, string Value)
 internal record ElementParams(string Element);
 
 internal record ScreenshotParams(string? Element = null, string? Mode = null, string? Background = null);
+
+internal record AddXamlParams(string Parent, string Xaml, int? Index = null);
+
+internal record ReplaceXamlParams(string Element, string Xaml);

@@ -117,6 +117,9 @@ public static class Commands
     public const string Resources = "resources";
     public const string Ping = "ping";
     public const string Click = "click";
+    public const string AddXaml = "add-xaml";
+    public const string RemoveElement = "remove";
+    public const string ReplaceXaml = "replace";
 }
 
 /// <summary>
