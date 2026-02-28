@@ -116,6 +116,7 @@ public static class Commands
     public const string Styles = "styles";
     public const string Resources = "resources";
     public const string Ping = "ping";
+    public const string Click = "click";
 }
 
 /// <summary>

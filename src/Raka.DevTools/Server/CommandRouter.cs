@@ -1,5 +1,8 @@
 using System.Text.Json;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation.Peers;
+using Microsoft.UI.Xaml.Automation.Provider;
+using Microsoft.UI.Xaml.Controls;
 using Raka.DevTools.Core;
 using Raka.Protocol;
 
@@ -31,6 +34,7 @@ internal sealed class CommandRouter
                 Commands.GetProperty => HandleGetProperty(request.Params),
                 Commands.SetProperty => HandleSetProperty(request.Params),
                 Commands.Ancestors => HandleAncestors(request.Params),
+                Commands.Click => HandleClick(request.Params),
                 _ => new RakaResponse { Success = false, Error = $"Unknown command: {request.Command}" }
             };
         }
@@ -214,6 +218,59 @@ internal sealed class CommandRouter
             Success = true,
             Data = JsonSerializer.SerializeToElement(ancestors, RakaJson.Options)
         };
+    }
+
+    private RakaResponse HandleClick(JsonElement? parameters)
+    {
+        if (!parameters.HasValue || !parameters.Value.TryGetProperty("element", out var elemProp))
+            return new RakaResponse { Success = false, Error = "Missing 'element' parameter" };
+
+        var elementId = elemProp.GetString()!;
+        var element = _walker.GetElement(elementId)
+            ?? throw new ArgumentException($"Element '{elementId}' not found. Run 'inspect' first.");
+
+        if (element is not UIElement uiElement)
+            return new RakaResponse { Success = false, Error = $"Element {elementId} ({element.GetType().Name}) is not a UIElement" };
+
+        var peer = FrameworkElementAutomationPeer.CreatePeerForElement(uiElement);
+        if (peer == null)
+            return new RakaResponse { Success = false, Error = $"No automation peer for {element.GetType().Name}" };
+
+        // Try Invoke (buttons, hyperlinks, menu items)
+        if (peer.GetPattern(PatternInterface.Invoke) is IInvokeProvider invoker)
+        {
+            invoker.Invoke();
+            return new RakaResponse
+            {
+                Success = true,
+                Data = JsonSerializer.SerializeToElement(new { action = "invoke", element = elementId, type = element.GetType().Name }, RakaJson.Options)
+            };
+        }
+
+        // Try Toggle (checkboxes, toggle switches, toggle buttons)
+        if (peer.GetPattern(PatternInterface.Toggle) is IToggleProvider toggler)
+        {
+            toggler.Toggle();
+            var newState = toggler.ToggleState.ToString();
+            return new RakaResponse
+            {
+                Success = true,
+                Data = JsonSerializer.SerializeToElement(new { action = "toggle", element = elementId, type = element.GetType().Name, state = newState }, RakaJson.Options)
+            };
+        }
+
+        // Try SelectionItem (radio buttons, list items)
+        if (peer.GetPattern(PatternInterface.SelectionItem) is ISelectionItemProvider selector)
+        {
+            selector.Select();
+            return new RakaResponse
+            {
+                Success = true,
+                Data = JsonSerializer.SerializeToElement(new { action = "select", element = elementId, type = element.GetType().Name }, RakaJson.Options)
+            };
+        }
+
+        return new RakaResponse { Success = false, Error = $"{element.GetType().Name} does not support click, toggle, or select" };
     }
 
     private DependencyObject? GetRoot()

@@ -8,6 +8,7 @@ var rootCommand = new RootCommand("raka — WinUI 3 app automation tool for AI a
     SearchCommand.Create(),
     GetPropertyCommand.Create(),
     SetPropertyCommand.Create(),
+    ClickCommand.Create(),
     ScreenshotCommand.Create(),
     AncestorsCommand.Create(),
     ListCommand.Create(),
