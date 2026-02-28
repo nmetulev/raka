@@ -1,0 +1,134 @@
+name: Release
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'Directory.Build.props'
+      - 'src/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      should_release: ${{ steps.check.outputs.should_release }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version from Directory.Build.props
+        id: read
+        run: |
+          version=$(grep -oP '<Version>\K[^<]+' Directory.Build.props)
+          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "Version: $version"
+
+      - name: Check if release already exists
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "v${{ steps.read.outputs.version }}" --repo ${{ github.repository }} > /dev/null 2>&1; then
+            echo "Release v${{ steps.read.outputs.version }} already exists — skipping."
+            echo "should_release=false" >> $GITHUB_OUTPUT
+          else
+            echo "No release for v${{ steps.read.outputs.version }} — will create."
+            echo "should_release=true" >> $GITHUB_OUTPUT
+          fi
+
+  build:
+    needs: check-version
+    if: needs.check-version.outputs.should_release == 'true'
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        runtime: [win-x64, win-arm64]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build CLI (${{ matrix.runtime }})
+        run: |
+          dotnet publish src/Raka.Cli/Raka.Cli.csproj `
+            --configuration Release `
+            --runtime ${{ matrix.runtime }} `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true `
+            --output artifacts/cli/raka-${{ matrix.runtime }}
+
+      - name: Zip CLI
+        run: Compress-Archive -Path "artifacts/cli/raka-${{ matrix.runtime }}/*" -DestinationPath "artifacts/raka-${{ matrix.runtime }}.zip"
+
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: raka-${{ matrix.runtime }}
+          path: artifacts/raka-${{ matrix.runtime }}.zip
+
+  pack:
+    needs: check-version
+    if: needs.check-version.outputs.should_release == 'true'
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Pack NuGet
+        run: dotnet pack src/Raka.DevTools/Raka.DevTools.csproj --configuration Release --output artifacts/nuget
+
+      - name: Upload NuGet artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages
+          path: artifacts/nuget/*.nupkg
+
+  release:
+    needs: [check-version, build, pack]
+    if: needs.check-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${{ needs.check-version.outputs.version }}"
+          gh release create "v${version}" \
+            --repo ${{ github.repository }} \
+            --title "Raka v${version}" \
+            --generate-notes \
+            release-assets/raka-win-x64/raka-win-x64.zip \
+            release-assets/raka-win-arm64/raka-win-arm64.zip \
+            release-assets/nuget-packages/*.nupkg

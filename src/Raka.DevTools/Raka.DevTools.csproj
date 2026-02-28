@@ -9,6 +9,11 @@
     <WinUISDKReferences>false</WinUISDKReferences>
     <Platforms>x86;x64;ARM64</Platforms>
     <RuntimeIdentifiers>win-x86;win-x64;win-arm64</RuntimeIdentifiers>
+    <PackageId>Raka.DevTools</PackageId>
+    <Description>In-app DevTools for WinUI 3 — enables the Raka CLI to inspect, modify, and interact with your running app. Playwright-like automation for WinUI 3.</Description>
+    <PackageTags>winui3;automation;devtools;xaml;testing;accessibility</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,7 +22,21 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Raka.Protocol\Raka.Protocol.csproj" />
+    <ProjectReference Include="..\Raka.Protocol\Raka.Protocol.csproj" PrivateAssets="all" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);IncludeProtocolInPackage</TargetsForTfmSpecificBuildOutput>
+  </PropertyGroup>
+
+  <Target Name="IncludeProtocolInPackage">
+    <ItemGroup>
+      <BuildOutputInPackage Include="$(OutputPath)Raka.Protocol.dll" />
+    </ItemGroup>
+  </Target>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>

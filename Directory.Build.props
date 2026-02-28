@@ -1,0 +1,9 @@
+<Project>
+  <PropertyGroup>
+    <Version>0.1.0</Version>
+    <Authors>Nikola Metulev</Authors>
+    <Product>Raka</Product>
+    <Copyright>Copyright (c) 2026 Nikola Metulev</Copyright>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+</Project>

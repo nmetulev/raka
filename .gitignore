@@ -16,6 +16,7 @@ packages/
 x64/
 x86/
 ARM64/
+artifacts/
 
 ## OS
 Thumbs.db
