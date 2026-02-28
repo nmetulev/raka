@@ -22,14 +22,26 @@ raka screenshot -f screenshot.png     # Pixel-perfect screenshot with Mica
 dotnet add package Raka.DevTools
 ```
 
-### 2. Enable DevTools in your `App.xaml.cs`
+### 2. Run your app, then use the CLI
+
+```bash
+raka inspect --app MyApp
+```
+
+**That's it.** No code changes needed — zero-code setup. The NuGet package automatically discovers your `Window` and starts a named pipe server. The CLI connects to it and sends commands.
+
+> **How it works:** Raka injects a `[ModuleInitializer]` into your app at compile time that uses a Win32 timer to safely attach to the UI thread after your `Window` is created. It reflects over your `App` class to find `Window`-typed fields/properties and calls `UseRakaDevTools()` automatically.
+
+<details>
+<summary>Advanced: Manual initialization</summary>
+
+If auto-init doesn't find your window (e.g., it's not stored as a field on your `App` class), you can initialize explicitly:
 
 ```csharp
 #if RAKA_DEVTOOLS
 using Raka.DevTools;
 #endif
 
-// In OnLaunched:
 protected override void OnLaunched(LaunchActivatedEventArgs args)
 {
     _window = new MainWindow();
@@ -40,15 +52,17 @@ protected override void OnLaunched(LaunchActivatedEventArgs args)
 }
 ```
 
-The `RAKA_DEVTOOLS` symbol is automatically defined in Debug builds and absent in Release — **zero runtime footprint in production**. You don't need to manage this yourself.
+The `RAKA_DEVTOOLS` symbol is automatically defined in Debug builds only — `#if` blocks compile out in Release.
 
-### 3. Run your app, then use the CLI
+To disable auto-init (when using manual initialization), add to your `.csproj`:
 
-```bash
-raka inspect --app MyApp
+```xml
+<PropertyGroup>
+  <RakaDevToolsAutoInit>false</RakaDevToolsAutoInit>
+</PropertyGroup>
 ```
 
-That's it. The NuGet package starts a named pipe server inside your app. The CLI connects to it and sends commands.
+</details>
 
 ---
 
@@ -235,9 +249,10 @@ raka disconnect                   # Clear saved connection
 
 Raka.DevTools is automatically **excluded from Release builds**. The NuGet package ships with MSBuild `.props`/`.targets` that:
 
-1. Define `RAKA_DEVTOOLS` preprocessor symbol only in Debug → `#if RAKA_DEVTOOLS` blocks compile out
-2. Strip the assembly references in Release → no DLLs in your production output
-3. Mark the package as a development dependency → won't flow to downstream consumers
+1. **Zero-code auto-init** — Injects a `[ModuleInitializer]` that discovers your `Window` and attaches DevTools automatically in Debug builds
+2. **Debug-only symbol** — Defines `RAKA_DEVTOOLS` only in Debug → `#if RAKA_DEVTOOLS` blocks compile out in Release
+3. **Assembly stripping** — Removes all Raka assembly references in Release → no DLLs in production output
+4. **Development dependency** — Package won't flow to downstream consumers
 
 **Override:** To force-enable in any configuration (e.g., staging), add to your `.csproj`:
 
