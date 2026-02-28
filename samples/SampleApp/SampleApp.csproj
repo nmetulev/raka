@@ -47,6 +47,10 @@
     <ProjectReference Include="..\..\src\Raka.DevTools\Raka.DevTools.csproj" />
   </ItemGroup>
 
+  <!-- Simulate NuGet auto-import (these are auto-imported when consuming via NuGet) -->
+  <Import Project="..\..\src\Raka.DevTools\build\Raka.DevTools.props" />
+  <Import Project="..\..\src\Raka.DevTools\build\Raka.DevTools.targets" />
+
   <!--
     Defining the "HasPackageAndPublishMenuAddedByProject" property here allows the Solution
     Explorer "Package and Publish" context menu entry to be enabled for this project even if

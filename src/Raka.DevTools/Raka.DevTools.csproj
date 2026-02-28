@@ -40,6 +40,7 @@
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />
     <None Include="build\Raka.DevTools.props" Pack="true" PackagePath="build\" />
     <None Include="build\Raka.DevTools.targets" Pack="true" PackagePath="build\" />
+    <None Include="build\Raka.DevTools.AutoInit.cs" Pack="true" PackagePath="build\" />
   </ItemGroup>
 
 </Project>
