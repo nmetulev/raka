@@ -150,11 +150,11 @@ internal sealed class PipeServer : IDisposable
     {
         var tcs = new TaskCompletionSource<RakaResponse>();
 
-        bool queued = _dispatcherQueue.TryEnqueue(() =>
+        bool queued = _dispatcherQueue.TryEnqueue(async () =>
         {
             try
             {
-                var response = _router.Handle(request);
+                var response = await _router.HandleAsync(request);
                 tcs.SetResult(response);
             }
             catch (Exception ex)

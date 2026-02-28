@@ -1,10 +1,14 @@
+using System.Runtime.InteropServices.WindowsRuntime;
 using System.Text.Json;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Raka.DevTools.Core;
 using Raka.Protocol;
+using Windows.Graphics.Imaging;
+using Windows.Storage.Streams;
 
 namespace Raka.DevTools.Server;
 
@@ -22,7 +26,7 @@ internal sealed class CommandRouter
         _window = window;
     }
 
-    public RakaResponse Handle(RakaRequest request)
+    public async Task<RakaResponse> HandleAsync(RakaRequest request)
     {
         try
         {
@@ -35,6 +39,7 @@ internal sealed class CommandRouter
                 Commands.SetProperty => HandleSetProperty(request.Params),
                 Commands.Ancestors => HandleAncestors(request.Params),
                 Commands.Click => HandleClick(request.Params),
+                Commands.Screenshot => await HandleScreenshotAsync(request.Params),
                 _ => new RakaResponse { Success = false, Error = $"Unknown command: {request.Command}" }
             };
         }
@@ -271,6 +276,62 @@ internal sealed class CommandRouter
         }
 
         return new RakaResponse { Success = false, Error = $"{element.GetType().Name} does not support click, toggle, or select" };
+    }
+
+    private async Task<RakaResponse> HandleScreenshotAsync(JsonElement? parameters)
+    {
+        string? elementId = null;
+        if (parameters.HasValue && parameters.Value.TryGetProperty("element", out var elemProp))
+            elementId = elemProp.GetString();
+
+        UIElement target;
+        if (elementId != null)
+        {
+            var element = _walker.GetElement(elementId)
+                ?? throw new ArgumentException($"Element '{elementId}' not found. Run 'inspect' first.");
+            if (element is not UIElement uiEl)
+                return new RakaResponse { Success = false, Error = $"Element {elementId} ({element.GetType().Name}) is not a UIElement" };
+            target = uiEl;
+        }
+        else
+        {
+            target = _window?.Content as UIElement
+                ?? throw new InvalidOperationException("No window content available");
+        }
+
+        var rtb = new RenderTargetBitmap();
+        await rtb.RenderAsync(target);
+
+        var pixelBuffer = await rtb.GetPixelsAsync();
+        var pixels = pixelBuffer.ToArray();
+        var width = rtb.PixelWidth;
+        var height = rtb.PixelHeight;
+
+        // Encode as PNG
+        using var stream = new InMemoryRandomAccessStream();
+        var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.PngEncoderId, stream);
+        encoder.SetPixelData(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied,
+            (uint)width, (uint)height, 96, 96, pixels);
+        await encoder.FlushAsync();
+
+        stream.Seek(0);
+        var bytes = new byte[stream.Size];
+        await stream.ReadAsync(bytes.AsBuffer(), (uint)stream.Size, InputStreamOptions.None);
+
+        var base64 = Convert.ToBase64String(bytes);
+
+        return new RakaResponse
+        {
+            Success = true,
+            Data = JsonSerializer.SerializeToElement(new
+            {
+                width,
+                height,
+                format = "png",
+                encoding = "base64",
+                data = base64
+            }, RakaJson.Options)
+        };
     }
 
     private DependencyObject? GetRoot()
