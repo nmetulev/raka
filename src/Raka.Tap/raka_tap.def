@@ -1,0 +1,4 @@
+LIBRARY raka_tap
+EXPORTS
+    DllGetClassObject   PRIVATE
+    DllCanUnloadNow     PRIVATE

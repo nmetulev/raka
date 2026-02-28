@@ -18,6 +18,9 @@ x86/
 ARM64/
 artifacts/
 
+## CMake (Raka.Tap)
+src/Raka.Tap/build*/
+
 ## OS
 Thumbs.db
 .DS_Store
