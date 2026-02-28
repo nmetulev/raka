@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="SampleApp.ToolsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <ScrollViewer Padding="32">
+        <StackPanel Spacing="24" MaxWidth="800">
+            <TextBlock Text="Tools" Style="{StaticResource TitleTextBlockStyle}" />
+            <TextBlock Text="Live tools for inspecting and modifying the running app."
+                       TextWrapping="Wrap" Opacity="0.7" />
+
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBox PlaceholderText="Enter a raka command..." />
+                <Button Grid.Column="1" Content="Run" Style="{StaticResource AccentButtonStyle}" Margin="8,0,0,0" />
+            </Grid>
+
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    CornerRadius="8" Padding="16" MinHeight="200">
+                <TextBlock Text="Output will appear here..."
+                           FontFamily="Cascadia Code,Consolas,monospace" FontSize="13"
+                           TextWrapping="Wrap" Opacity="0.6" />
+            </Border>
+
+            <TextBlock Text="Quick Reference" Style="{StaticResource SubtitleTextBlockStyle}" />
+            <StackPanel Spacing="4">
+                <TextBlock Text="raka inspect --app MyApp" FontFamily="Cascadia Code,Consolas,monospace" FontSize="13" />
+                <TextBlock Text="raka search -t Button" FontFamily="Cascadia Code,Consolas,monospace" FontSize="13" />
+                <TextBlock Text="raka set-property e5 Background Red" FontFamily="Cascadia Code,Consolas,monospace" FontSize="13" />
+                <TextBlock Text="raka screenshot -f shot.png" FontFamily="Cascadia Code,Consolas,monospace" FontSize="13" />
+                <TextBlock Text="raka hot-reload . --app MyApp" FontFamily="Cascadia Code,Consolas,monospace" FontSize="13" />
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

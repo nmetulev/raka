@@ -11,11 +11,22 @@ public sealed partial class MainWindow : Window
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
         AppWindow.SetIcon("Assets/AppIcon.ico");
+
+        NavView.SelectedItem = NavView.MenuItems[0];
+        ContentFrame.Navigate(typeof(HomePage));
     }
 
-    private void GreetButton_Click(object sender, RoutedEventArgs e)
+    private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
-        var name = NameInput.Text;
-        OutputText.Text = string.IsNullOrWhiteSpace(name) ? "Hello, World!" : $"Hello, {name}!";
+        if (args.SelectedItemContainer is NavigationViewItem item)
+        {
+            var tag = item.Tag?.ToString();
+            switch (tag)
+            {
+                case "home": ContentFrame.Navigate(typeof(HomePage)); break;
+                case "tools": ContentFrame.Navigate(typeof(ToolsPage)); break;
+                case "settings": ContentFrame.Navigate(typeof(SettingsPage)); break;
+            }
+        }
     }
 }

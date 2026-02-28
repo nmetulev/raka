@@ -400,6 +400,7 @@ internal static class HotReloadCommand
     /// <summary>
     /// Extracts the inner content XAML from a file.
     /// For a Page/UserControl/Window, returns the content child element (skipping attached properties).
+    /// Namespace declarations from the wrapper are carried over to the inner content.
     /// For other elements (Grid, StackPanel, etc.), returns the whole XAML.
     /// </summary>
     private static string ExtractInnerContent(string xaml)
@@ -419,6 +420,10 @@ internal static class HotReloadCommand
                 var closeOfOpen = FindEndOfOpeningTag(content);
                 if (closeOfOpen > 0)
                 {
+                    // Extract xmlns declarations from the wrapper's opening tag
+                    var openingTag = content[..closeOfOpen];
+                    var namespaces = ExtractNamespaceDeclarations(openingTag);
+
                     var closingTag = content.LastIndexOf($"</{root}", StringComparison.Ordinal);
                     if (closingTag < 0)
                         closingTag = content.LastIndexOf("</", StringComparison.Ordinal);
@@ -427,10 +432,14 @@ internal static class HotReloadCommand
                         var inner = content[closeOfOpen..closingTag].Trim();
                         if (!string.IsNullOrEmpty(inner))
                         {
-                            // Skip attached property elements like <Window.SystemBackdrop>
-                            // These start with the parent type name followed by a dot
                             inner = SkipAttachedProperties(inner, root);
-                            if (!string.IsNullOrEmpty(inner)) return inner;
+                            if (!string.IsNullOrEmpty(inner))
+                            {
+                                // Inject parent namespaces into the inner content's root element
+                                if (namespaces.Count > 0)
+                                    inner = InjectNamespaces(inner, namespaces);
+                                return inner;
+                            }
                         }
                     }
                 }
@@ -438,6 +447,81 @@ internal static class HotReloadCommand
         }
 
         return content;
+    }
+
+    /// <summary>
+    /// Extracts xmlns:xxx="..." declarations from an XML opening tag.
+    /// Returns pairs to avoid duplicates when injecting.
+    /// </summary>
+    private static List<string> ExtractNamespaceDeclarations(string openingTag)
+    {
+        var result = new List<string>();
+        var idx = 0;
+        while (true)
+        {
+            idx = openingTag.IndexOf("xmlns:", idx, StringComparison.Ordinal);
+            if (idx < 0) break;
+
+            // Find the end of this declaration: xmlns:local="using:SampleApp"
+            var eqIdx = openingTag.IndexOf('=', idx);
+            if (eqIdx < 0) break;
+
+            var quoteChar = openingTag[eqIdx + 1];
+            var endQuote = openingTag.IndexOf(quoteChar, eqIdx + 2);
+            if (endQuote < 0) break;
+
+            var decl = openingTag[idx..(endQuote + 1)];
+
+            // Skip standard x: and d: and mc: namespaces — they're for the compiler only
+            if (!decl.StartsWith("xmlns:x=") && !decl.StartsWith("xmlns:d=") && !decl.StartsWith("xmlns:mc="))
+            {
+                result.Add(decl);
+            }
+
+            idx = endQuote + 1;
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Injects namespace declarations into the first element of the inner XAML.
+    /// </summary>
+    private static string InjectNamespaces(string xaml, List<string> namespaces)
+    {
+        // Find the first '>' or '/>' in the root element to inject before it
+        // But we need to be careful about quotes
+        var firstGt = -1;
+        bool inQuote = false;
+        char quoteChar = '"';
+
+        for (int i = 0; i < xaml.Length; i++)
+        {
+            if (inQuote) { if (xaml[i] == quoteChar) inQuote = false; continue; }
+            if (xaml[i] == '"' || xaml[i] == '\'') { inQuote = true; quoteChar = xaml[i]; continue; }
+            if (xaml[i] == '>')
+            {
+                firstGt = i;
+                break;
+            }
+        }
+
+        if (firstGt < 0) return xaml;
+
+        // Check for self-closing (/>)
+        var insertPos = (firstGt > 0 && xaml[firstGt - 1] == '/') ? firstGt - 1 : firstGt;
+
+        // Build namespace string, only inject ones not already present
+        var toInject = new List<string>();
+        foreach (var ns in namespaces)
+        {
+            if (!xaml.Contains(ns.Split('=')[0] + "="))
+                toInject.Add(ns);
+        }
+
+        if (toInject.Count == 0) return xaml;
+
+        var nsString = " " + string.Join(" ", toInject);
+        return xaml[..insertPos] + nsString + xaml[insertPos..];
     }
 
     /// <summary>

@@ -578,7 +578,7 @@ internal sealed class CommandRouter
     private static DependencyObject ParseXaml(string xaml)
     {
         // If the XAML doesn't have xmlns, wrap with default WinUI namespaces
-        if (!xaml.Contains("xmlns"))
+        if (!xaml.Contains("xmlns=\""))
         {
             // Find the first tag name to inject namespaces
             var firstGt = xaml.IndexOf('>');

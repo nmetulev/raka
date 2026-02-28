@@ -18,23 +18,24 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <TitleBar x:Name="AppTitleBar" Title="SampleApp">
+        <TitleBar x:Name="AppTitleBar" Title="Raka Sample">
             <TitleBar.IconSource>
                 <ImageIconSource ImageSource="Assets/AppIcon.ico" />
             </TitleBar.IconSource>
         </TitleBar>
 
-        <Grid Grid.Row="1" Padding="24">
-            <StackPanel x:Name="MainPanel" Spacing="16" VerticalAlignment="Center" HorizontalAlignment="Center">
-                <TextBlock x:Name="WelcomeText" Text="Welcome to Raka DevTools Sample" FontSize="24" HorizontalAlignment="Center" />
-                <TextBox x:Name="NameInput" PlaceholderText="Enter your name" Width="300" />
-                <Button x:Name="GreetButton" Content="Say Hello" HorizontalAlignment="Center" Click="GreetButton_Click" />
-                <TextBlock x:Name="OutputText" Text="" FontSize="16" HorizontalAlignment="Center" />
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8">
-                    <CheckBox x:Name="DarkModeCheck" Content="Dark Mode" />
-                    <ToggleSwitch x:Name="AnimationToggle" Header="Animations" IsOn="True" />
-                </StackPanel>
-            </StackPanel>
-        </Grid>
+        <NavigationView x:Name="NavView" Grid.Row="1"
+                        IsBackButtonVisible="Collapsed"
+                        SelectionChanged="NavView_SelectionChanged">
+            <NavigationView.MenuItems>
+                <NavigationViewItem Content="Home" Tag="home" Icon="Home" />
+                <NavigationViewItem Content="Tools" Tag="tools" Icon="Repair" />
+            </NavigationView.MenuItems>
+            <NavigationView.FooterMenuItems>
+                <NavigationViewItem Content="Settings" Tag="settings" Icon="Setting" />
+            </NavigationView.FooterMenuItems>
+
+            <Frame x:Name="ContentFrame" />
+        </NavigationView>
     </Grid>
 </Window>

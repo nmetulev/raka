@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="SampleApp.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <ScrollViewer Padding="32">
+        <StackPanel Spacing="24" MaxWidth="600">
+            <TextBlock Text="Settings" Style="{StaticResource TitleTextBlockStyle}" />
+            <StackPanel Spacing="12">
+                <TextBlock Text="Appearance" Style="{StaticResource SubtitleTextBlockStyle}" />
+                <ToggleSwitch Header="Dark Mode" />
+                <ToggleSwitch Header="Compact Mode" />
+                <ComboBox Header="Accent Color" Width="200">
+                    <ComboBoxItem Content="Blue" IsSelected="True" />
+                    <ComboBoxItem Content="Red" />
+                    <ComboBoxItem Content="Green" />
+                    <ComboBoxItem Content="Purple" />
+                </ComboBox>
+            </StackPanel>
+            <StackPanel Spacing="12">
+                <TextBlock Text="Connection" Style="{StaticResource SubtitleTextBlockStyle}" />
+                <TextBox Header="Pipe Name" PlaceholderText="Auto-detected" />
+                <NumberBox Header="Timeout (ms)" Value="3000" Minimum="500" Maximum="30000" />
+                <ToggleSwitch Header="Auto-Connect on Launch" IsOn="True" />
+            </StackPanel>
+            <StackPanel Spacing="8">
+                <TextBlock Text="About" Style="{StaticResource SubtitleTextBlockStyle}" />
+                <TextBlock Text="Raka DevTools Sample v1.0" Opacity="0.7" />
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

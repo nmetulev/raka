@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="SampleApp.HomePage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:SampleApp">
+
+    <ScrollViewer Padding="32">
+        <StackPanel Spacing="24" MaxWidth="800">
+            <TextBlock Text="Home" Style="{StaticResource TitleTextBlockStyle}" />
+            <TextBlock Text="Welcome to the Raka DevTools multi-page sample. Edit any XAML file while hot-reload is running to see changes instantly."
+                       TextWrapping="Wrap" Opacity="0.7" />
+
+            <StackPanel Spacing="12">
+                <local:StatusCard Title="Connection" Status="Connected" Icon="&#xE703;" StatusColor="#4CAF50" />
+                <local:StatusCard Title="Hot Reload" Status="Active" Icon="&#xE769;" StatusColor="#FF9800" />
+                <local:StatusCard Title="Build" Status="Succeeded" Icon="&#xE930;" StatusColor="#2196F3" />
+            </StackPanel>
+
+            <TextBlock Text="Quick Actions" Style="{StaticResource SubtitleTextBlockStyle}" Margin="0,16,0,0" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Content="Inspect Tree" Style="{StaticResource AccentButtonStyle}" />
+                <Button Content="Take Screenshot" />
+                <Button Content="Search Elements" />
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</Page>
