@@ -38,8 +38,10 @@ internal static class PropertyWriter
 
     private static DependencyProperty? FindDependencyProperty(DependencyObject element, string propertyName)
     {
-        var fieldName = propertyName.EndsWith("Property") ? propertyName : $"{propertyName}Property";
-        var field = element.GetType().GetField(fieldName, BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
+        var propName = propertyName.EndsWith("Property") ? propertyName : $"{propertyName}Property";
+        var prop = element.GetType().GetProperty(propName, BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
+        if (prop != null) return prop.GetValue(null) as DependencyProperty;
+        var field = element.GetType().GetField(propName, BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
         return field?.GetValue(null) as DependencyProperty;
     }
 

@@ -53,20 +53,20 @@ internal static class PropertyReader
         var results = new List<PropertyValue>();
         var type = element.GetType();
 
-        // Find all static DependencyProperty fields
-        var fields = type.GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy)
-            .Where(f => f.FieldType == typeof(DependencyProperty));
+        // In WinUI 3 (CsWinRT), DependencyProperty values are exposed as static properties, not fields
+        var props = type.GetProperties(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy)
+            .Where(p => p.PropertyType == typeof(DependencyProperty));
 
-        foreach (var field in fields)
+        foreach (var prop in props)
         {
             try
             {
-                var dp = (DependencyProperty?)field.GetValue(null);
+                var dp = (DependencyProperty?)prop.GetValue(null);
                 if (dp == null) continue;
 
-                var name = field.Name;
+                var name = prop.Name;
                 if (name.EndsWith("Property"))
-                    name = name[..^8]; // Remove "Property" suffix
+                    name = name[..^8];
 
                 var value = element.GetValue(dp);
                 results.Add(new PropertyValue
@@ -88,8 +88,12 @@ internal static class PropertyReader
 
     private static DependencyProperty? FindDependencyProperty(DependencyObject element, string propertyName)
     {
-        var fieldName = propertyName.EndsWith("Property") ? propertyName : $"{propertyName}Property";
-        var field = element.GetType().GetField(fieldName, BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
+        var propName = propertyName.EndsWith("Property") ? propertyName : $"{propertyName}Property";
+        // CsWinRT exposes DependencyProperty as static properties, not fields
+        var prop = element.GetType().GetProperty(propName, BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
+        if (prop != null) return prop.GetValue(null) as DependencyProperty;
+        // Also check fields as fallback
+        var field = element.GetType().GetField(propName, BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
         return field?.GetValue(null) as DependencyProperty;
     }
 

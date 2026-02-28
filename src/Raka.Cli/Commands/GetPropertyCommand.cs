@@ -8,7 +8,7 @@ internal static class GetPropertyCommand
     public static Command Create()
     {
         var elementArg = new Argument<string>("element") { Description = "Element ID (e.g., e5)" };
-        var propertyArg = new Argument<string?>("property") { Description = "Property name (e.g., Background, Margin)" };
+        var propertyArg = new Argument<string?>("property") { Description = "Property name (e.g., Background, Margin)", Arity = ArgumentArity.ZeroOrOne };
         var allOption = new Option<bool>("-a") { Description = "List all properties" };
         allOption.Aliases.Add("--all");
 
