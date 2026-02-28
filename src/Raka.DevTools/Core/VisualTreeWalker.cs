@@ -132,6 +132,13 @@ internal sealed class VisualTreeWalker
 
         childCount = VisualTreeHelper.GetChildrenCount(obj);
 
+        // For Frame elements, expose the Content type (Pages aren't in the visual tree)
+        string? contentClassName = null;
+        if (obj is Microsoft.UI.Xaml.Controls.Frame frame && frame.Content != null)
+        {
+            contentClassName = frame.Content.GetType().FullName;
+        }
+
         return new ElementNode
         {
             Id = $"e{id}",
@@ -141,7 +148,8 @@ internal sealed class VisualTreeWalker
             AutomationId = autoId,
             Visibility = visibility,
             Bounds = bounds,
-            ChildCount = childCount
+            ChildCount = childCount,
+            ContentClassName = contentClassName
         };
     }
 

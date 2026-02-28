@@ -67,6 +67,10 @@ public sealed class ElementNode
 
     [JsonPropertyName("childCount")]
     public int ChildCount { get; set; }
+
+    [JsonPropertyName("contentClassName")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ContentClassName { get; set; }
 }
 
 public sealed class ElementBounds

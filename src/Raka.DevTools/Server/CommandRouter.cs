@@ -267,7 +267,7 @@ internal sealed class CommandRouter
             };
         }
 
-        // Try SelectionItem (radio buttons, list items)
+        // Try SelectionItem (radio buttons, list items, NavigationViewItems)
         if (peer.GetPattern(PatternInterface.SelectionItem) is ISelectionItemProvider selector)
         {
             selector.Select();
@@ -603,5 +603,16 @@ internal sealed class CommandRouter
     private DependencyObject? GetRoot()
     {
         return _window?.Content as DependencyObject;
+    }
+
+    private static T? FindParent<T>(DependencyObject child) where T : DependencyObject
+    {
+        var parent = VisualTreeHelper.GetParent(child);
+        while (parent != null)
+        {
+            if (parent is T match) return match;
+            parent = VisualTreeHelper.GetParent(parent);
+        }
+        return null;
     }
 }

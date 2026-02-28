@@ -200,12 +200,23 @@ internal static class HotReloadCommand
                     var id = FindElementByClassName(treeSnapshot.Value, className)
                           ?? FindElementByType(treeSnapshot.Value, shortClass);
 
-                    if (id != null)
+                    // For Page types not found in the visual tree, check Frame.Content
+                    if (id == null && rootType is "Page")
+                    {
+                        id = FindPageInFrame(treeSnapshot.Value, className);
+                        if (id != null)
+                        {
+                            fileToElementId[filePath] = id;
+                            Console.Error.WriteLine($"  {shortClass} → {id} (via Frame.Content)");
+                        }
+                    }
+
+                    if (id != null && !fileToElementId.ContainsKey(filePath))
                     {
                         fileToElementId[filePath] = id;
                         Console.Error.WriteLine($"  {shortClass} → {id}");
                     }
-                    else
+                    else if (id == null)
                     {
                         Console.Error.WriteLine($"  {shortClass} → (not found in live tree — may not be visible)");
                     }
@@ -275,6 +286,10 @@ internal static class HotReloadCommand
                                 var shortClass = className.Contains('.') ? className[(className.LastIndexOf('.') + 1)..] : className;
                                 id = FindElementByClassName(response.Data.Value, className)
                                   ?? FindElementByType(response.Data.Value, shortClass);
+
+                                // For Page types, check Frame.Content
+                                if (id == null && rootType is "Page")
+                                    id = FindPageInFrame(response.Data.Value, className);
                             }
                         }
                     }
@@ -732,6 +747,55 @@ internal static class HotReloadCommand
             foreach (var child in children.EnumerateArray())
             {
                 var found = FindElementByClassName(child, className);
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Finds a Page loaded in a Frame by checking Frame.contentClassName.
+    /// Returns the ID of the Frame's ContentPresenter's first child (the actual Page content root).
+    /// Pages don't appear in the VisualTreeHelper walk — the Frame renders them through a ContentPresenter.
+    /// </summary>
+    private static string? FindPageInFrame(JsonElement node, string pageClassName)
+    {
+        // Check if this is a Frame with matching contentClassName
+        if (node.TryGetProperty("contentClassName", out var ccn) &&
+            string.Equals(ccn.GetString(), pageClassName, StringComparison.OrdinalIgnoreCase))
+        {
+            // Found the Frame — navigate to ContentPresenter → first child
+            if (node.TryGetProperty("children", out var frameChildren) && frameChildren.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var child in frameChildren.EnumerateArray())
+                {
+                    // Look for ContentPresenter (first child of Frame)
+                    if (child.TryGetProperty("type", out var typeProp) &&
+                        typeProp.GetString() == "ContentPresenter")
+                    {
+                        // The ContentPresenter's first child is the Page's content root
+                        if (child.TryGetProperty("children", out var cpChildren) && cpChildren.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var grandChild in cpChildren.EnumerateArray())
+                            {
+                                if (grandChild.TryGetProperty("id", out var idProp))
+                                    return idProp.GetString();
+                            }
+                        }
+                    }
+                }
+            }
+            // Fallback: return the Frame's ID itself
+            if (node.TryGetProperty("id", out var frameId))
+                return frameId.GetString();
+        }
+
+        // Recurse into children
+        if (node.TryGetProperty("children", out var children) && children.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var child in children.EnumerateArray())
+            {
+                var found = FindPageInFrame(child, pageClassName);
                 if (found != null) return found;
             }
         }
