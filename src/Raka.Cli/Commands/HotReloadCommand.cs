@@ -399,7 +399,8 @@ internal static class HotReloadCommand
             {
                 var time = DateTime.Now.ToString("HH:mm:ss");
                 var shortName = Path.GetFileName(filePath);
-                Console.Error.WriteLine($"[{time}] ✓ Reloaded {shortName}");
+                var count = response.Data.HasValue ? CountElements(response.Data.Value) : 0;
+                Console.Error.WriteLine($"[{time}] ✓ Reloaded {shortName} ({count} elements)");
             }
             else
             {
@@ -410,6 +411,20 @@ internal static class HotReloadCommand
         {
             Console.Error.WriteLine($"  ✗ {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Counts elements in a JSON tree response (id + children recursively).
+    /// </summary>
+    private static int CountElements(JsonElement node)
+    {
+        int count = 1;
+        if (node.TryGetProperty("children", out var children) && children.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var child in children.EnumerateArray())
+                count += CountElements(child);
+        }
+        return count;
     }
 
     /// <summary>

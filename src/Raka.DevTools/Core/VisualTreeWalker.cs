@@ -142,6 +142,12 @@ internal sealed class VisualTreeWalker
             contentClassName = frame.Content.GetType().FullName;
         }
 
+        // Source file correlation: infer XAML file path from type for Pages/Windows/UserControls
+        // Also infer from Frame.Content since Pages don't appear in the visual tree
+        string? sourceFile = InferSourceFile(obj.GetType())
+            ?? (obj is Microsoft.UI.Xaml.Controls.Frame f2 && f2.Content != null
+                ? InferSourceFile(f2.Content.GetType()) : null);
+
         return new ElementNode
         {
             Id = $"e{id}",
@@ -152,7 +158,8 @@ internal sealed class VisualTreeWalker
             Visibility = visibility,
             Bounds = bounds,
             ChildCount = childCount,
-            ContentClassName = contentClassName
+            ContentClassName = contentClassName,
+            SourceFile = sourceFile
         };
     }
 
@@ -292,5 +299,32 @@ internal sealed class VisualTreeWalker
 
         var val = prop.GetValue(obj)?.ToString();
         return val != null && val.Equals(expected, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Infers the XAML source file path from a type, for Page/Window/UserControl subclasses.
+    /// E.g., FinanceDashboard.Pages.DashboardPage → Pages/DashboardPage.xaml
+    /// </summary>
+    private static string? InferSourceFile(Type type)
+    {
+        // Only for app-defined types that derive from Page, Window, or UserControl
+        if (!typeof(Microsoft.UI.Xaml.Controls.Page).IsAssignableFrom(type) &&
+            !typeof(Microsoft.UI.Xaml.Window).IsAssignableFrom(type) &&
+            !typeof(Microsoft.UI.Xaml.Controls.UserControl).IsAssignableFrom(type))
+            return null;
+
+        // Skip framework types
+        var fullName = type.FullName;
+        if (fullName == null || fullName.StartsWith("Microsoft.") || fullName.StartsWith("System."))
+            return null;
+
+        // Strip assembly name prefix to get relative path
+        var assemblyName = type.Assembly.GetName().Name;
+        var relativeName = fullName;
+        if (assemblyName != null && fullName.StartsWith(assemblyName + "."))
+            relativeName = fullName[(assemblyName.Length + 1)..];
+
+        // Convert dots to path separators and append .xaml
+        return relativeName.Replace('.', '/') + ".xaml";
     }
 }

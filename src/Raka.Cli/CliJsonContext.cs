@@ -24,6 +24,7 @@ namespace Raka.Cli;
 [JsonSerializable(typeof(AddXamlParams))]
 [JsonSerializable(typeof(ReplaceXamlParams))]
 [JsonSerializable(typeof(NavigateParams))]
+[JsonSerializable(typeof(ClickParams))]
 internal partial class CliJsonContext : JsonSerializerContext
 {
     private static CliJsonContext? _pretty;
@@ -61,3 +62,5 @@ internal record AddXamlParams(string Parent, string Xaml, int? Index = null);
 internal record ReplaceXamlParams(string Element, string Xaml);
 
 internal record NavigateParams(string Page);
+
+internal record ClickParams(string? Element = null, string? Name = null, string? Type = null, string? Text = null);

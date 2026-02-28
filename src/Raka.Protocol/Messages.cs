@@ -71,6 +71,10 @@ public sealed class ElementNode
     [JsonPropertyName("contentClassName")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ContentClassName { get; set; }
+
+    [JsonPropertyName("sourceFile")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SourceFile { get; set; }
 }
 
 public sealed class ElementBounds

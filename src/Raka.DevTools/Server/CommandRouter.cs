@@ -242,12 +242,49 @@ internal sealed class CommandRouter
 
     private RakaResponse HandleClick(JsonElement? parameters)
     {
-        if (!parameters.HasValue || !parameters.Value.TryGetProperty("element", out var elemProp))
-            return new RakaResponse { Success = false, Error = "Missing 'element' parameter" };
+        if (!parameters.HasValue)
+            return new RakaResponse { Success = false, Error = "Missing parameters" };
 
-        var elementId = elemProp.GetString()!;
-        var element = _walker.GetElement(elementId)
-            ?? throw new ArgumentException($"Element '{elementId}' not found. Run 'inspect' first.");
+        DependencyObject? element = null;
+        string elementId = "";
+
+        // Primary: resolve by element ID
+        if (parameters.Value.TryGetProperty("element", out var elemProp) && elemProp.GetString() is string eid)
+        {
+            elementId = eid;
+            element = _walker.GetElement(elementId)
+                ?? throw new ArgumentException($"Element '{elementId}' not found. Run 'inspect' first.");
+        }
+        // Alternative: resolve by x:Name
+        else if (parameters.Value.TryGetProperty("name", out var nameProp) && nameProp.GetString() is string xname)
+        {
+            var root = GetRoot();
+            if (root == null) return new RakaResponse { Success = false, Error = "No window content available" };
+
+            string? type = parameters.Value.TryGetProperty("type", out var tp) ? tp.GetString() : null;
+            var results = _walker.Search(root, type, xname, null, null);
+            if (results.Count == 0)
+                return new RakaResponse { Success = false, Error = $"No element found with name '{xname}'" };
+            elementId = results[0].Id;
+            element = _walker.GetElement(elementId)!;
+        }
+        // Alternative: resolve by type + text
+        else if (parameters.Value.TryGetProperty("type", out var typeProp) && typeProp.GetString() is string tname)
+        {
+            var root = GetRoot();
+            if (root == null) return new RakaResponse { Success = false, Error = "No window content available" };
+
+            string? text = parameters.Value.TryGetProperty("text", out var txp) ? txp.GetString() : null;
+            var results = _walker.Search(root, tname, null, text, null);
+            if (results.Count == 0)
+                return new RakaResponse { Success = false, Error = $"No element found matching type '{tname}'" + (text != null ? $" with text '{text}'" : "") };
+            elementId = results[0].Id;
+            element = _walker.GetElement(elementId)!;
+        }
+        else
+        {
+            return new RakaResponse { Success = false, Error = "Missing 'element', 'name', or 'type' parameter" };
+        }
 
         if (element is not UIElement uiElement)
             return new RakaResponse { Success = false, Error = $"Element {elementId} ({element.GetType().Name}) is not a UIElement" };
@@ -312,7 +349,7 @@ internal sealed class CommandRouter
             };
         }
 
-        return new RakaResponse { Success = false, Error = $"{element.GetType().Name} does not support click, toggle, or select" };
+        return new RakaResponse { Success = false, Error = $"{element.GetType().Name} does not support click, toggle, or select. Try: search -t Button (or NavigationViewItem, CheckBox, ToggleSwitch) to find interactive children." };
     }
 
     private async Task<RakaResponse> HandleScreenshotAsync(JsonElement? parameters)
