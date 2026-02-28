@@ -267,7 +267,29 @@ internal sealed class CommandRouter
             };
         }
 
-        // Try SelectionItem (radio buttons, list items, NavigationViewItems)
+        // Special handling for NavigationViewItem: go through NavigationView's selection model
+        // ISelectionItemProvider.Select() only updates visual state but may not fire SelectionChanged
+        if (element is NavigationViewItem navItem)
+        {
+            var navView = FindParent<NavigationView>(navItem);
+            if (navView != null)
+            {
+                // Force selection change by clearing first, then setting
+                var previousItem = navView.SelectedItem;
+                if (!ReferenceEquals(previousItem, navItem))
+                {
+                    navView.SelectedItem = null;
+                }
+                navView.SelectedItem = navItem;
+                return new RakaResponse
+                {
+                    Success = true,
+                    Data = JsonSerializer.SerializeToElement(new { action = "select", element = elementId, type = element.GetType().Name }, RakaJson.Options)
+                };
+            }
+        }
+
+        // Try SelectionItem (radio buttons, list items)
         if (peer.GetPattern(PatternInterface.SelectionItem) is ISelectionItemProvider selector)
         {
             selector.Select();
