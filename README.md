@@ -9,6 +9,7 @@ raka inspect --app MyApp                          # See the full visual tree
 raka search -t Button --app MyApp                 # Find all buttons
 raka set-property e5 Background "#FF5500"         # Change a property live
 raka add-xaml e6 "<Button Content='New'/>"        # Inject XAML at runtime
+raka hot-reload ui.xaml -n MainPanel --app MyApp  # Watch file & live-reload
 raka screenshot -f screenshot.png                 # Pixel-perfect screenshot
 raka tap-inspect --app Calculator                 # Inspect ANY WinUI 3 app (no NuGet)
 ```
@@ -23,7 +24,7 @@ Raka has two fundamentally different ways to connect to a WinUI 3 app. Choose ba
 
 Add the `Raka.DevTools` NuGet package to your app. Gives you **full read/write access**: inspect, modify properties, inject XAML, click buttons, take screenshots. Best for apps you're building.
 
-**All commands** work in this mode: `inspect`, `search`, `get-property`, `set-property`, `click`, `screenshot`, `add-xaml`, `remove`, `replace`, `ancestors`.
+**All commands** work in this mode: `inspect`, `search`, `get-property`, `set-property`, `click`, `screenshot`, `add-xaml`, `remove`, `replace`, `hot-reload`, `ancestors`.
 
 ### 🔍 TAP Mode (read-only — any app)
 
@@ -40,7 +41,7 @@ Use `tap-inspect` to inject a diagnostics DLL into **any running WinUI 3 app** �
 | **Modify UI** | ✅ set-property, add-xaml, replace, remove | ❌ |
 | **Click / interact** | ✅ click | ❌ |
 | **Screenshots** | ✅ capture + render modes | ❌ |
-| **XAML injection** | ✅ add-xaml, replace | ❌ |
+| **XAML injection** | ✅ add-xaml, replace, hot-reload | ❌ |
 | **Element IDs** | ✅ Stable across commands (e0, e1...) | Instance handles (per-session) |
 
 ---
@@ -253,6 +254,44 @@ raka replace e7 "<TextBlock Text='Replaced!' FontSize='32' Foreground='Red'/>"
 ```
 
 Removes the target element from its parent and inserts the new XAML in its place at the same position.
+
+---
+
+### `hot-reload` — Watch a XAML file and live-reload
+
+```bash
+raka hot-reload ui.xaml --target-name MainPanel --app MyApp   # Target by x:Name
+raka hot-reload ui.xaml --element e3 --app MyApp              # Target by element ID
+raka hot-reload ui.xaml --app MyApp                           # Auto-detect target
+```
+
+Watches a XAML file for changes and automatically replaces the target element in the running app on each save. The XAML file content is parsed via `XamlReader.Load()` and swapped into the live visual tree.
+
+**Targeting options:**
+- `--target-name <name>` / `-n` — Find the element by its `x:Name` (recommended — stable across reloads)
+- `--element <id>` / `-e` — Use a specific element ID (from `inspect`)
+- *(omit both)* — Auto-detects by matching the XAML file's root element type against the live tree
+
+**How it works:**
+1. Connects to the running app (NuGet mode)
+2. Finds the target element by name, ID, or type match
+3. Parses the XAML file and replaces the target element
+4. Watches the file — on each save, re-parses and re-replaces
+5. If the XAML root is `<Page>`, `<UserControl>`, or `<Window>`, the inner content is extracted automatically
+
+**Example workflow:**
+```bash
+# Create a XAML file with your UI
+echo '<StackPanel><TextBlock Text="Hello"/></StackPanel>' > panel.xaml
+
+# Start hot reload targeting the MainPanel by name
+raka hot-reload panel.xaml --target-name MainPanel --app MyApp
+
+# Edit panel.xaml in your editor — the app updates on each save
+# Press Ctrl+C to stop watching
+```
+
+> **Note:** This uses `XamlReader.Load()` under the hood, so `{Binding}` works but `{x:Bind}` and event handlers do not survive reload. Best for rapid visual prototyping.
 
 ---
 
@@ -506,7 +545,8 @@ The workflow reads the version, checks if a GitHub Release already exists for it
 - [x] **Phase 2** — XAML injection (add-xaml, replace, remove)
 - [ ] **Phase 3** — Style/resource/context inspection
 - [x] **Phase 4** — C++ TAP DLL injection (inspect any WinUI 3 app without NuGet)
-- [ ] **Phase 5** — Hot Reload via IVisualTreeService3, MCP server, Copilot integration
+- [x] **Phase 4b** — Hot Reload (watch XAML files, auto-replace on save)
+- [ ] **Phase 5** — TAP-mode write operations via IVisualTreeService3, MCP server, Copilot integration
 - [ ] **Phase 6** — Watch mode, XAML source correlation
 
 ---

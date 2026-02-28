@@ -1,0 +1,5 @@
+<StackPanel Spacing="24" VerticalAlignment="Center" HorizontalAlignment="Center">
+    <TextBlock Text="🚀 v3 - Still going!" FontSize="36" HorizontalAlignment="Center" Foreground="#9C27B0" FontWeight="Bold" />
+    <ProgressBar IsIndeterminate="True" Width="300" />
+    <TextBlock Text="Hot reload stable across multiple saves" FontSize="14" HorizontalAlignment="Center" Opacity="0.5" />
+</StackPanel>
