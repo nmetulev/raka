@@ -33,6 +33,22 @@ public static class RakaDevToolsExtension
         _server = new PipeServer(pipeName, _router, dispatcherQueue);
         _server.Start();
 
+        // Prevent composition-thread COMExceptions (e.g., "Invalid pointer" after
+        // XAML injection) from crashing the app. These are transient rendering errors
+        // that resolve on the next frame.
+        if (Application.Current is Application app)
+        {
+            app.UnhandledException += (sender, e) =>
+            {
+                if (e.Exception is System.Runtime.InteropServices.COMException comEx)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[Raka DevTools] Suppressed COMException 0x{comEx.HResult:X8}: {comEx.Message}");
+                    e.Handled = true;
+                }
+            };
+        }
+
         // Log the pipe name so the CLI can discover it
         System.Diagnostics.Debug.WriteLine($"[Raka DevTools] Listening on pipe: {pipeName} (PID: {Environment.ProcessId})");
 
