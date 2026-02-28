@@ -343,7 +343,12 @@ internal sealed class CommandRouter
             else if (_window?.SystemBackdrop != null)
             {
                 mode = "render";
-                background ??= "#1E1E1E"; // dark default for backdrop apps
+                if (background == null)
+                {
+                    // Pick background based on actual theme
+                    var isDark = (_window.Content as FrameworkElement)?.ActualTheme == ElementTheme.Dark;
+                    background = isDark ? "#1E1E1E" : "#F3F3F3";
+                }
                 hint = "Auto-switched to render mode (Mica/Acrylic backdrop detected). " +
                        "Use --mode capture to override, or --bg to change background color.";
             }
@@ -355,7 +360,7 @@ internal sealed class CommandRouter
         else if (mode == "capture" && elementId == null && _window?.SystemBackdrop != null)
         {
             hint = "Warning: Mica/Acrylic backdrop detected — capture mode may produce a black image. " +
-                   "Try --mode render --bg \"#1E1E1E\" for reliable results.";
+                   "Try --mode render --bg \"#1E1E1E\" (dark) or \"#F3F3F3\" (light) for reliable results.";
         }
 
         // Allow the layout pass to complete after any recent XAML changes
