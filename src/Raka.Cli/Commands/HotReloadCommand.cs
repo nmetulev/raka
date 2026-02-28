@@ -5,18 +5,19 @@ using Raka.Protocol;
 namespace Raka.Cli.Commands;
 
 /// <summary>
-/// Watches a XAML file and hot-reloads the running app on each save.
+/// Watches XAML files and hot-reloads the running app on each save.
+/// Supports single-file mode and directory-wide watch mode.
 /// Uses XamlReader.Load() via the NuGet pipe to parse and replace content.
 /// </summary>
 internal static class HotReloadCommand
 {
     public static Command Create()
     {
-        var fileArg = new Argument<string>("file") { Description = "XAML file to watch (e.g., MainPage.xaml)" };
-        var elementOption = new Option<string?>("--element", "-e") { Description = "Element ID to replace (e.g., e6)" };
-        var nameOption = new Option<string?>("--target-name", "-n") { Description = "Target element by x:Name (e.g., MainPanel)" };
+        var fileArg = new Argument<string?>("file") { Description = "XAML file or directory to watch. If a directory, watches all *.xaml files.", Arity = ArgumentArity.ZeroOrOne };
+        var elementOption = new Option<string?>("--element", "-e") { Description = "Element ID to replace (single-file mode only)" };
+        var nameOption = new Option<string?>("--target-name", "-n") { Description = "Target element by x:Name (single-file mode only)" };
 
-        var command = new Command("hot-reload", "Watch a XAML file and hot-reload the running app on save")
+        var command = new Command("hot-reload", "Watch XAML file(s) and hot-reload the running app on save")
         {
             fileArg,
             elementOption,
@@ -26,88 +27,338 @@ internal static class HotReloadCommand
 
         command.SetAction(async (parseResult, ct) =>
         {
-            var file = parseResult.GetValue(fileArg)!;
+            var fileOrDir = parseResult.GetValue(fileArg);
             var elementId = parseResult.GetValue(elementOption);
             var targetName = parseResult.GetValue(nameOption);
 
-            if (!File.Exists(file))
+            // Default to current directory if nothing specified
+            fileOrDir ??= Directory.GetCurrentDirectory();
+
+            var fullPath = Path.GetFullPath(fileOrDir);
+
+            if (Directory.Exists(fullPath))
             {
-                Console.Error.WriteLine($"File not found: {file}");
+                // Directory mode — watch all XAML files
+                await RunDirectoryMode(parseResult, fullPath);
+            }
+            else if (File.Exists(fullPath))
+            {
+                // Single-file mode — existing behavior
+                await RunSingleFileMode(parseResult, fullPath, elementId, targetName);
+            }
+            else
+            {
+                Console.Error.WriteLine($"Not found: {fullPath}");
                 Environment.ExitCode = 1;
-                return;
             }
-
-            var fullPath = Path.GetFullPath(file);
-            Console.Error.WriteLine($"Watching: {fullPath}");
-
-            // Resolve target element
-            if (elementId == null && targetName != null)
-            {
-                // Find element by x:Name via inspect
-                elementId = await FindElementByName(parseResult, targetName);
-                if (elementId == null)
-                {
-                    Console.Error.WriteLine($"No element found with x:Name '{targetName}'.");
-                    Environment.ExitCode = 1;
-                    return;
-                }
-            }
-            else if (elementId == null)
-            {
-                elementId = await AutoDetectElement(parseResult, fullPath);
-                if (elementId == null)
-                {
-                    Console.Error.WriteLine("Could not auto-detect target element. Use --element <id> or --target-name <name>.");
-                    Environment.ExitCode = 1;
-                    return;
-                }
-            }
-            Console.Error.WriteLine($"Target element: {elementId}");
-
-            // Do initial reload
-            // Since inspect re-walks the tree and reassigns IDs from e0,
-            // the element at the same position keeps its original ID.
-            await ReloadXaml(parseResult, fullPath, elementId);
-
-            // Watch for changes
-            var dir = Path.GetDirectoryName(fullPath)!;
-            var fileName = Path.GetFileName(fullPath);
-            using var watcher = new FileSystemWatcher(dir, fileName)
-            {
-                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size,
-                EnableRaisingEvents = true
-            };
-
-            var debounce = DateTime.MinValue;
-            var tcs = new TaskCompletionSource();
-
-            watcher.Changed += async (_, e) =>
-            {
-                // Debounce: ignore rapid-fire events within 300ms
-                var now = DateTime.UtcNow;
-                if ((now - debounce).TotalMilliseconds < 300) return;
-                debounce = now;
-
-                // Small delay to let the file finish writing
-                await Task.Delay(100);
-
-                await ReloadXaml(parseResult, fullPath, elementId);
-            };
-
-            Console.Error.WriteLine("Hot reload active. Save the file to reload. Press Ctrl+C to stop.");
-
-            // Wait for cancellation
-            Console.CancelKeyPress += (_, e) =>
-            {
-                e.Cancel = true;
-                tcs.TrySetResult();
-            };
-
-            await tcs.Task;
-            Console.Error.WriteLine("Hot reload stopped.");
         });
 
         return command;
+    }
+
+    /// <summary>
+    /// Watches a single XAML file and reloads a specific element.
+    /// </summary>
+    private static async Task RunSingleFileMode(ParseResult parseResult, string fullPath, string? elementId, string? targetName)
+    {
+        Console.Error.WriteLine($"Watching: {fullPath}");
+
+        // Resolve target element
+        if (elementId == null && targetName != null)
+        {
+            elementId = await FindElementByName(parseResult, targetName);
+            if (elementId == null)
+            {
+                Console.Error.WriteLine($"No element found with x:Name '{targetName}'.");
+                Environment.ExitCode = 1;
+                return;
+            }
+        }
+        else if (elementId == null)
+        {
+            elementId = await AutoDetectElement(parseResult, fullPath);
+            if (elementId == null)
+            {
+                Console.Error.WriteLine("Could not auto-detect target element. Use --element <id> or --target-name <name>.");
+                Environment.ExitCode = 1;
+                return;
+            }
+        }
+        Console.Error.WriteLine($"Target element: {elementId}");
+
+        await ReloadXaml(parseResult, fullPath, elementId);
+
+        var dir = Path.GetDirectoryName(fullPath)!;
+        var fileName = Path.GetFileName(fullPath);
+        using var watcher = new FileSystemWatcher(dir, fileName)
+        {
+            NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size,
+            EnableRaisingEvents = true
+        };
+
+        var debounce = DateTime.MinValue;
+        var tcs = new TaskCompletionSource();
+
+        watcher.Changed += async (_, e) =>
+        {
+            var now = DateTime.UtcNow;
+            if ((now - debounce).TotalMilliseconds < 300) return;
+            debounce = now;
+            await Task.Delay(100);
+            await ReloadXaml(parseResult, fullPath, elementId);
+        };
+
+        Console.Error.WriteLine("Hot reload active. Save the file to reload. Press Ctrl+C to stop.");
+        Console.CancelKeyPress += (_, e) => { e.Cancel = true; tcs.TrySetResult(); };
+        await tcs.Task;
+        Console.Error.WriteLine("Hot reload stopped.");
+    }
+
+    /// <summary>
+    /// Watches all XAML files in a directory and auto-maps each to its element via x:Class.
+    /// </summary>
+    private static async Task RunDirectoryMode(ParseResult parseResult, string directory)
+    {
+        // Find all XAML files and parse x:Class to build the mapping
+        var xamlFiles = Directory.GetFiles(directory, "*.xaml", SearchOption.AllDirectories)
+            .Where(f => !f.Contains("\\obj\\") && !f.Contains("\\bin\\") && !f.EndsWith(".g.xaml"))
+            .ToList();
+
+        if (xamlFiles.Count == 0)
+        {
+            Console.Error.WriteLine($"No XAML files found in {directory}");
+            Environment.ExitCode = 1;
+            return;
+        }
+
+        Console.Error.WriteLine($"Watching {xamlFiles.Count} XAML file(s) in {directory}");
+
+        // Build the x:Class → file path map and discover which files are relevant
+        var classMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in xamlFiles)
+        {
+            var className = ParseXClass(file);
+            if (className != null)
+            {
+                classMap[className] = file;
+                var shortName = Path.GetRelativePath(directory, file);
+                Console.Error.WriteLine($"  {shortName} → {className}");
+            }
+        }
+
+        if (classMap.Count == 0)
+        {
+            Console.Error.WriteLine("No XAML files with x:Class found.");
+            Environment.ExitCode = 1;
+            return;
+        }
+
+        // Do initial inspection to understand the live tree
+        Console.Error.WriteLine("Inspecting live tree...");
+        JsonElement? treeSnapshot = null;
+        try
+        {
+            using var client = await CommandHelpers.GetConnectedClient(parseResult);
+            var response = await client.SendCommandAsync(Protocol.Commands.Inspect, null);
+            if (response.Success && response.Data.HasValue)
+                treeSnapshot = response.Data.Value.Clone();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"  ✗ Cannot connect: {ex.Message}");
+            Environment.ExitCode = 1;
+            return;
+        }
+
+        // Map each class to its target element ID
+        // The root of the tree corresponds to the Window's content
+        // Other classes (Pages, UserControls) need to be found by className
+        var fileToElementId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (className, filePath) in classMap)
+        {
+            var shortClass = className.Contains('.') ? className[(className.LastIndexOf('.') + 1)..] : className;
+
+            if (treeSnapshot.HasValue)
+            {
+                // For the main window, the tree root IS its content
+                // Check if this class is a Window type by reading the XAML
+                var rootType = ParseRootType(filePath);
+
+                if (rootType is "Window")
+                {
+                    // The Window's content is the root of the inspect tree (e0)
+                    if (treeSnapshot.Value.TryGetProperty("id", out var rootId))
+                    {
+                        fileToElementId[filePath] = rootId.GetString()!;
+                        Console.Error.WriteLine($"  {shortClass} → {rootId.GetString()} (window content)");
+                    }
+                }
+                else
+                {
+                    // Search for this type by className in the tree
+                    var id = FindElementByClassName(treeSnapshot.Value, className)
+                          ?? FindElementByType(treeSnapshot.Value, shortClass);
+
+                    if (id != null)
+                    {
+                        fileToElementId[filePath] = id;
+                        Console.Error.WriteLine($"  {shortClass} → {id}");
+                    }
+                    else
+                    {
+                        Console.Error.WriteLine($"  {shortClass} → (not found in live tree — may not be visible)");
+                    }
+                }
+            }
+        }
+
+        if (fileToElementId.Count == 0)
+        {
+            Console.Error.WriteLine("No XAML files could be mapped to live elements.");
+            Environment.ExitCode = 1;
+            return;
+        }
+
+        Console.Error.WriteLine($"Mapped {fileToElementId.Count} file(s) to live elements.");
+
+        // Watch directory for changes
+        using var watcher = new FileSystemWatcher(directory, "*.xaml")
+        {
+            NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size,
+            IncludeSubdirectories = true,
+            EnableRaisingEvents = true
+        };
+
+        var debounceMap = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        var tcs = new TaskCompletionSource();
+
+        watcher.Changed += async (_, e) =>
+        {
+            var changedPath = Path.GetFullPath(e.FullPath);
+
+            // Debounce per-file
+            var now = DateTime.UtcNow;
+            if (debounceMap.TryGetValue(changedPath, out var last) && (now - last).TotalMilliseconds < 300)
+                return;
+            debounceMap[changedPath] = now;
+
+            await Task.Delay(100);
+
+            if (fileToElementId.TryGetValue(changedPath, out var elementId))
+            {
+                await ReloadXaml(parseResult, changedPath, elementId);
+            }
+            else
+            {
+                // File not mapped — try to map it dynamically
+                var className = ParseXClass(changedPath);
+                if (className != null)
+                {
+                    var rootType = ParseRootType(changedPath);
+                    string? id = null;
+
+                    // Re-inspect to find the element
+                    try
+                    {
+                        using var client = await CommandHelpers.GetConnectedClient(parseResult);
+                        var response = await client.SendCommandAsync(Protocol.Commands.Inspect, null);
+                        if (response.Success && response.Data.HasValue)
+                        {
+                            if (rootType is "Window")
+                            {
+                                if (response.Data.Value.TryGetProperty("id", out var rootId))
+                                    id = rootId.GetString();
+                            }
+                            else
+                            {
+                                var shortClass = className.Contains('.') ? className[(className.LastIndexOf('.') + 1)..] : className;
+                                id = FindElementByClassName(response.Data.Value, className)
+                                  ?? FindElementByType(response.Data.Value, shortClass);
+                            }
+                        }
+                    }
+                    catch { }
+
+                    if (id != null)
+                    {
+                        fileToElementId[changedPath] = id;
+                        await ReloadXaml(parseResult, changedPath, id);
+                    }
+                    else
+                    {
+                        var shortName = Path.GetRelativePath(directory, changedPath);
+                        Console.Error.WriteLine($"  ⊘ {shortName} — not mapped to a live element (not visible?)");
+                    }
+                }
+            }
+        };
+
+        Console.Error.WriteLine("Hot reload active. Save any XAML file to reload. Press Ctrl+C to stop.");
+        Console.CancelKeyPress += (_, e) => { e.Cancel = true; tcs.TrySetResult(); };
+        await tcs.Task;
+        Console.Error.WriteLine("Hot reload stopped.");
+    }
+
+    /// <summary>
+    /// Parses x:Class from a XAML file. Returns the full class name or null.
+    /// </summary>
+    private static string? ParseXClass(string filePath)
+    {
+        try
+        {
+            // Read just enough to find x:Class (usually in first few lines)
+            using var reader = new StreamReader(filePath);
+            var buffer = new char[2048];
+            var read = reader.Read(buffer, 0, buffer.Length);
+            var text = new string(buffer, 0, read);
+
+            var marker = "x:Class=\"";
+            var idx = text.IndexOf(marker, StringComparison.Ordinal);
+            if (idx < 0) return null;
+
+            var start = idx + marker.Length;
+            var end = text.IndexOf('"', start);
+            if (end < 0) return null;
+
+            return text[start..end];
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Parses the root element type from a XAML file (e.g., "Window", "Page", "UserControl").
+    /// </summary>
+    private static string? ParseRootType(string filePath)
+    {
+        try
+        {
+            using var reader = new StreamReader(filePath);
+            var buffer = new char[2048];
+            var read = reader.Read(buffer, 0, buffer.Length);
+            var text = new string(buffer, 0, read);
+
+            // Skip XML declaration
+            if (text.StartsWith("<?xml"))
+            {
+                var endDecl = text.IndexOf("?>");
+                if (endDecl >= 0) text = text[(endDecl + 2)..].TrimStart();
+            }
+
+            if (text.StartsWith('<'))
+            {
+                var endOfTag = text.IndexOfAny([' ', '>', '/', '\r', '\n'], 1);
+                if (endOfTag > 1)
+                {
+                    var rootType = text[1..endOfTag];
+                    var colonIdx = rootType.IndexOf(':');
+                    if (colonIdx >= 0) rootType = rootType[(colonIdx + 1)..];
+                    return rootType;
+                }
+            }
+        }
+        catch { }
+        return null;
     }
 
     /// <summary>
@@ -118,16 +369,11 @@ internal static class HotReloadCommand
         try
         {
             var xaml = await File.ReadAllTextAsync(filePath);
-
-            // Extract inner content from root element for replacement.
-            // If the file has a Page/UserControl root, we want to replace the target
-            // element with the root's content (not wrap it in another Page).
             var innerXaml = ExtractInnerContent(xaml);
 
             using var client = await CommandHelpers.GetConnectedClient(parseResult);
 
             // Ensure the tree walker is populated — replace needs elements indexed.
-            // inspect resets IDs from e0, so the element at the same position keeps its ID.
             await client.SendCommandAsync(Protocol.Commands.Inspect, null);
 
             var p = new ReplaceXamlParams(elementId, innerXaml);
@@ -137,7 +383,8 @@ internal static class HotReloadCommand
             if (response.Success)
             {
                 var time = DateTime.Now.ToString("HH:mm:ss");
-                Console.Error.WriteLine($"[{time}] ✓ Reloaded {Path.GetFileName(filePath)}");
+                var shortName = Path.GetFileName(filePath);
+                Console.Error.WriteLine($"[{time}] ✓ Reloaded {shortName}");
             }
             else
             {
@@ -152,12 +399,11 @@ internal static class HotReloadCommand
 
     /// <summary>
     /// Extracts the inner content XAML from a file.
-    /// For a Page/UserControl/Window, returns the content inside the root element.
+    /// For a Page/UserControl/Window, returns the content child element (skipping attached properties).
     /// For other elements (Grid, StackPanel, etc.), returns the whole XAML.
     /// </summary>
     private static string ExtractInnerContent(string xaml)
     {
-        // Strip XML declaration if present
         var content = xaml.TrimStart();
         if (content.StartsWith("<?xml"))
         {
@@ -165,41 +411,126 @@ internal static class HotReloadCommand
             if (endDecl >= 0) content = content[(endDecl + 2)..].TrimStart();
         }
 
-        // Check if root is a Page, UserControl, or Window — these wrap content
-        // If so, we want just the inner content element
         var wrapperRoots = new[] { "Page", "UserControl", "Window" };
         foreach (var root in wrapperRoots)
         {
-            // Match <Page, <local:Page, <controls:UserControl, etc.
             if (content.StartsWith($"<{root}") || content.Contains($":{root}"))
             {
-                // Find the end of the opening tag
                 var closeOfOpen = FindEndOfOpeningTag(content);
                 if (closeOfOpen > 0)
                 {
-                    // Find the closing tag
                     var closingTag = content.LastIndexOf($"</{root}", StringComparison.Ordinal);
                     if (closingTag < 0)
-                    {
-                        // Try with namespace prefix
                         closingTag = content.LastIndexOf("</", StringComparison.Ordinal);
-                    }
                     if (closingTag > closeOfOpen)
                     {
                         var inner = content[closeOfOpen..closingTag].Trim();
-                        if (!string.IsNullOrEmpty(inner)) return inner;
+                        if (!string.IsNullOrEmpty(inner))
+                        {
+                            // Skip attached property elements like <Window.SystemBackdrop>
+                            // These start with the parent type name followed by a dot
+                            inner = SkipAttachedProperties(inner, root);
+                            if (!string.IsNullOrEmpty(inner)) return inner;
+                        }
                     }
                 }
             }
         }
 
-        // Not a wrapper root — return the whole XAML
         return content;
+    }
+
+    /// <summary>
+    /// Skips attached property elements (e.g., Window.SystemBackdrop, Page.Resources)
+    /// and returns only the actual content child element.
+    /// </summary>
+    private static string SkipAttachedProperties(string inner, string parentType)
+    {
+        var remaining = inner;
+        while (remaining.Length > 0)
+        {
+            remaining = remaining.TrimStart();
+            if (remaining.Length == 0) break;
+
+            if (!remaining.StartsWith('<')) break;
+
+            // Check if this is an attached property element: <Window.Xxx> or <Page.Xxx>
+            bool isAttachedProp = false;
+            foreach (var prefix in new[] { $"<{parentType}.", "<Window.", "<Page.", "<UserControl." })
+            {
+                if (remaining.StartsWith(prefix, StringComparison.Ordinal))
+                {
+                    isAttachedProp = true;
+                    break;
+                }
+            }
+
+            if (!isAttachedProp)
+            {
+                // This is the content element — return everything from here
+                return remaining;
+            }
+
+            // Skip this attached property element entirely
+            var endOfBlock = FindMatchingCloseTag(remaining);
+            if (endOfBlock < 0) break;
+            remaining = remaining[endOfBlock..];
+        }
+
+        return remaining;
+    }
+
+    /// <summary>
+    /// Finds the end of the first XML element (including children) in the string.
+    /// Returns the index after the closing tag.
+    /// </summary>
+    private static int FindMatchingCloseTag(string xml)
+    {
+        int depth = 0;
+        bool inQuote = false;
+        char quoteChar = '"';
+
+        for (int i = 0; i < xml.Length; i++)
+        {
+            if (inQuote) { if (xml[i] == quoteChar) inQuote = false; continue; }
+            if (xml[i] == '"' || xml[i] == '\'') { inQuote = true; quoteChar = xml[i]; continue; }
+
+            if (xml[i] == '<')
+            {
+                // Check for self-closing or closing tag
+                if (i + 1 < xml.Length && xml[i + 1] == '/')
+                {
+                    depth--;
+                    // Find the end of this closing tag
+                    var closeEnd = xml.IndexOf('>', i);
+                    if (closeEnd >= 0 && depth == 0) return closeEnd + 1;
+                    if (closeEnd >= 0) i = closeEnd;
+                }
+                else
+                {
+                    depth++;
+                }
+            }
+            else if (xml[i] == '/')
+            {
+                // Self-closing: />
+                if (i + 1 < xml.Length && xml[i + 1] == '>')
+                {
+                    depth--;
+                    if (depth == 0) return i + 2;
+                    i++; // skip the >
+                }
+            }
+            else if (xml[i] == '>')
+            {
+                // Just the end of an opening tag — depth already incremented
+            }
+        }
+        return -1;
     }
 
     private static int FindEndOfOpeningTag(string xml)
     {
-        // Find the end of the first XML tag, handling self-closing and attributes
         int depth = 0;
         bool inQuote = false;
         char quoteChar = '"';
@@ -211,20 +542,9 @@ internal static class HotReloadCommand
                 if (xml[i] == quoteChar) inQuote = false;
                 continue;
             }
-
-            if (xml[i] == '"' || xml[i] == '\'')
-            {
-                inQuote = true;
-                quoteChar = xml[i];
-                continue;
-            }
-
+            if (xml[i] == '"' || xml[i] == '\'') { inQuote = true; quoteChar = xml[i]; continue; }
             if (xml[i] == '<') depth++;
-            if (xml[i] == '>')
-            {
-                depth--;
-                if (depth == 0) return i + 1;
-            }
+            if (xml[i] == '>') { depth--; if (depth == 0) return i + 1; }
         }
         return -1;
     }
@@ -239,35 +559,29 @@ internal static class HotReloadCommand
             var xaml = await File.ReadAllTextAsync(filePath);
             var content = xaml.TrimStart();
 
-            // Strip XML declaration
             if (content.StartsWith("<?xml"))
             {
                 var endDecl = content.IndexOf("?>");
                 if (endDecl >= 0) content = content[(endDecl + 2)..].TrimStart();
             }
 
-            // Extract root element type (e.g., "Page", "Grid", "StackPanel")
             if (content.StartsWith('<'))
             {
                 var endOfTag = content.IndexOfAny([' ', '>', '/', '\r', '\n'], 1);
                 if (endOfTag > 1)
                 {
                     var rootType = content[1..endOfTag];
-                    // Strip namespace prefix (e.g., "local:MyControl" → "MyControl")
                     var colonIdx = rootType.IndexOf(':');
                     if (colonIdx >= 0) rootType = rootType[(colonIdx + 1)..];
 
                     Console.Error.WriteLine($"XAML root type: {rootType}");
 
-                    // Inspect the live tree and search the JSON locally
                     using var client = await CommandHelpers.GetConnectedClient(parseResult);
                     var response = await client.SendCommandAsync(Protocol.Commands.Inspect, null);
 
                     if (response.Success && response.Data.HasValue)
                     {
-                        // DFS search in the JSON tree for matching type
-                        var id = FindElementByType(response.Data.Value, rootType);
-                        return id;
+                        return FindElementByType(response.Data.Value, rootType);
                     }
                 }
             }
@@ -277,16 +591,14 @@ internal static class HotReloadCommand
     }
 
     /// <summary>
-    /// DFS search in inspect JSON output for the first element matching the given type.
-    /// Prefers named elements (with x:Name) over unnamed ones. Skips the root element.
+    /// DFS search for the first element matching a type name.
+    /// Prefers named elements (with x:Name) over unnamed ones.
     /// </summary>
     private static string? FindElementByType(JsonElement node, string type, bool isRoot = true)
     {
-        string? firstUnnamed = null;
-
-        FindElementByTypeRecursive(node, type, isRoot, ref firstUnnamed);
-
-        return firstUnnamed; // Will be set to the first named match, or first unnamed if no named found
+        string? bestMatch = null;
+        FindElementByTypeRecursive(node, type, isRoot, ref bestMatch);
+        return bestMatch;
     }
 
     private static bool FindElementByTypeRecursive(JsonElement node, string type, bool isRoot, ref string? bestMatch)
@@ -300,18 +612,8 @@ internal static class HotReloadCommand
                 {
                     var id = idProp.GetString();
                     bool hasName = node.TryGetProperty("name", out var nameProp) && nameProp.GetString() != null;
-
-                    if (hasName)
-                    {
-                        // Named element — prefer this immediately
-                        bestMatch = id;
-                        return true; // Stop searching
-                    }
-                    else if (bestMatch == null)
-                    {
-                        // First unnamed match — save as fallback
-                        bestMatch = id;
-                    }
+                    if (hasName) { bestMatch = id; return true; }
+                    else if (bestMatch == null) { bestMatch = id; }
                 }
             }
         }
@@ -321,11 +623,35 @@ internal static class HotReloadCommand
             foreach (var child in children.EnumerateArray())
             {
                 if (FindElementByTypeRecursive(child, type, false, ref bestMatch))
-                    return true; // Found named match, stop
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// DFS search for an element with a matching className (full namespace).
+    /// </summary>
+    private static string? FindElementByClassName(JsonElement node, string className)
+    {
+        if (node.TryGetProperty("className", out var cnProp))
+        {
+            if (string.Equals(cnProp.GetString(), className, StringComparison.OrdinalIgnoreCase))
+            {
+                if (node.TryGetProperty("id", out var idProp))
+                    return idProp.GetString();
             }
         }
 
-        return false;
+        if (node.TryGetProperty("children", out var children) && children.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var child in children.EnumerateArray())
+            {
+                var found = FindElementByClassName(child, className);
+                if (found != null) return found;
+            }
+        }
+        return null;
     }
 
     /// <summary>
@@ -337,11 +663,8 @@ internal static class HotReloadCommand
         {
             using var client = await CommandHelpers.GetConnectedClient(parseResult);
             var response = await client.SendCommandAsync(Protocol.Commands.Inspect, null);
-
             if (response.Success && response.Data.HasValue)
-            {
                 return FindNodeByName(response.Data.Value, targetName);
-            }
         }
         catch { }
         return null;
@@ -366,7 +689,6 @@ internal static class HotReloadCommand
                 if (found != null) return found;
             }
         }
-
         return null;
     }
 }

@@ -9,7 +9,7 @@ raka inspect --app MyApp                          # See the full visual tree
 raka search -t Button --app MyApp                 # Find all buttons
 raka set-property e5 Background "#FF5500"         # Change a property live
 raka add-xaml e6 "<Button Content='New'/>"        # Inject XAML at runtime
-raka hot-reload ui.xaml -n MainPanel --app MyApp  # Watch file & live-reload
+raka hot-reload src/MyApp/ --app MyApp             # Watch dir & live-reload all XAML
 raka screenshot -f screenshot.png                 # Pixel-perfect screenshot
 raka tap-inspect --app Calculator                 # Inspect ANY WinUI 3 app (no NuGet)
 ```
@@ -257,41 +257,48 @@ Removes the target element from its parent and inserts the new XAML in its place
 
 ---
 
-### `hot-reload` — Watch a XAML file and live-reload
+### `hot-reload` — Watch XAML files and live-reload
 
+**Single file mode:**
 ```bash
 raka hot-reload ui.xaml --target-name MainPanel --app MyApp   # Target by x:Name
 raka hot-reload ui.xaml --element e3 --app MyApp              # Target by element ID
 raka hot-reload ui.xaml --app MyApp                           # Auto-detect target
 ```
 
-Watches a XAML file for changes and automatically replaces the target element in the running app on each save. The XAML file content is parsed via `XamlReader.Load()` and swapped into the live visual tree.
+**Directory mode (whole app):**
+```bash
+raka hot-reload src/MyApp/ --app MyApp                        # Watch all XAML files
+raka hot-reload --app MyApp                                   # Watch current directory
+```
 
-**Targeting options:**
+Directory mode auto-maps each XAML file to its live element via `x:Class`. When any `.xaml` file is saved, the corresponding element in the running app is updated automatically. Files not currently visible in the tree (e.g., a Page that hasn't been navigated to) are skipped.
+
+**Targeting options (single-file mode):**
 - `--target-name <name>` / `-n` — Find the element by its `x:Name` (recommended — stable across reloads)
 - `--element <id>` / `-e` — Use a specific element ID (from `inspect`)
 - *(omit both)* — Auto-detects by matching the XAML file's root element type against the live tree
 
 **How it works:**
 1. Connects to the running app (NuGet mode)
-2. Finds the target element by name, ID, or type match
-3. Parses the XAML file and replaces the target element
-4. Watches the file — on each save, re-parses and re-replaces
-5. If the XAML root is `<Page>`, `<UserControl>`, or `<Window>`, the inner content is extracted automatically
+2. Parses `x:Class` from each XAML file to identify the target element
+3. For Window files, replaces the Window's content (root Grid/Panel)
+4. For other types, searches the live tree by class name
+5. Watches for file changes — on each save, re-parses and re-replaces
+6. Attached properties (`<Window.SystemBackdrop>`, `<Page.Resources>`, etc.) are preserved/skipped
 
 **Example workflow:**
 ```bash
-# Create a XAML file with your UI
-echo '<StackPanel><TextBlock Text="Hello"/></StackPanel>' > panel.xaml
+# Watch the entire project — edit any XAML file and see changes immediately
+raka hot-reload src/MyApp/ --app MyApp
 
-# Start hot reload targeting the MainPanel by name
+# Or watch a single file targeting a specific element
 raka hot-reload panel.xaml --target-name MainPanel --app MyApp
 
-# Edit panel.xaml in your editor — the app updates on each save
 # Press Ctrl+C to stop watching
 ```
 
-> **Note:** This uses `XamlReader.Load()` under the hood, so `{Binding}` works but `{x:Bind}` and event handlers do not survive reload. Best for rapid visual prototyping.
+> **Note:** Uses `XamlReader.Load()` under the hood, so `{Binding}` works but `{x:Bind}` and event handlers do not survive reload. Best for rapid visual prototyping.
 
 ---
 

@@ -517,7 +517,20 @@ internal sealed class CommandRouter
 
         var parent = VisualTreeHelper.GetParent(element);
         if (parent == null)
-            return new RakaResponse { Success = false, Error = "Cannot replace root element" };
+        {
+            // Root element — replace the Window's content directly
+            if (_window != null)
+            {
+                var parsed2 = ParseXaml(xaml);
+                if (parsed2 is not UIElement newRoot)
+                    return new RakaResponse { Success = false, Error = $"Parsed XAML produced {parsed2.GetType().Name}, expected a UIElement" };
+
+                _window.Content = newRoot;
+                var rootNode = _walker.WalkFrom(newRoot, 2);
+                return new RakaResponse { Success = true, Data = JsonSerializer.SerializeToElement(rootNode, RakaJson.Options) };
+            }
+            return new RakaResponse { Success = false, Error = "Cannot replace root element — no window reference" };
+        }
 
         var parsed = ParseXaml(xaml);
         if (parsed is not UIElement newElement)
