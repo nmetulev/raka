@@ -25,13 +25,22 @@ dotnet add package Raka.DevTools
 ### 2. Enable DevTools in your `App.xaml.cs`
 
 ```csharp
+#if RAKA_DEVTOOLS
+using Raka.DevTools;
+#endif
+
+// In OnLaunched:
 protected override void OnLaunched(LaunchActivatedEventArgs args)
 {
     _window = new MainWindow();
-    _window.UseRakaDevTools();   // ← Add this line
+#if RAKA_DEVTOOLS
+    _window.UseRakaDevTools();
+#endif
     _window.Activate();
 }
 ```
+
+The `RAKA_DEVTOOLS` symbol is automatically defined in Debug builds and absent in Release — **zero runtime footprint in production**. You don't need to manage this yourself.
 
 ### 3. Run your app, then use the CLI
 
@@ -218,6 +227,24 @@ Shows every element from the target up to the visual tree root.
 ```bash
 raka list                         # Show saved connection
 raka disconnect                   # Clear saved connection
+```
+
+---
+
+## Production Safety
+
+Raka.DevTools is automatically **excluded from Release builds**. The NuGet package ships with MSBuild `.props`/`.targets` that:
+
+1. Define `RAKA_DEVTOOLS` preprocessor symbol only in Debug → `#if RAKA_DEVTOOLS` blocks compile out
+2. Strip the assembly references in Release → no DLLs in your production output
+3. Mark the package as a development dependency → won't flow to downstream consumers
+
+**Override:** To force-enable in any configuration (e.g., staging), add to your `.csproj`:
+
+```xml
+<PropertyGroup>
+  <RakaDevToolsEnabled>true</RakaDevToolsEnabled>
+</PropertyGroup>
 ```
 
 ---

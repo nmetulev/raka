@@ -1,0 +1,17 @@
+<Project>
+
+  <!--
+    Strip Raka.DevTools assembly references in Release builds.
+    This ensures zero runtime footprint in production.
+  -->
+  <Target Name="_RemoveRakaDevToolsInRelease"
+          BeforeTargets="ResolveAssemblyReferences"
+          Condition="'$(RakaDevToolsEnabled)' != 'true'">
+    <ItemGroup>
+      <Reference Remove="@(Reference)" Condition="'%(FileName)' == 'Raka.DevTools' Or '%(FileName)' == 'Raka.Protocol'" />
+      <ProjectReference Remove="@(ProjectReference)" Condition="$([System.String]::new('%(FileName)').Contains('Raka.DevTools'))" />
+    </ItemGroup>
+    <Message Importance="normal" Text="Raka.DevTools: Stripped from $(Configuration) build (set RakaDevToolsEnabled=true to override)" />
+  </Target>
+
+</Project>
