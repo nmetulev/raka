@@ -58,15 +58,30 @@ The `--app` flag matches by process name or window title. After the first comman
 
 ## Core Workflow
 
-The typical agent workflow is:
+The three most important commands form the agent's main loop:
 
 ```
-1. raka status                          # What page am I on? What theme?
-2. raka inspect -d 3 --format tree      # See the UI structure
-3. raka search --interactive --text X   # Find clickable elements
-4. raka click --type Button --text X    # Interact with controls
-5. raka screenshot -f screenshot.png    # Verify the result visually
-6. raka hot-reload src/MyApp/           # Edit XAML → see changes live
+1. raka status                          # What page/theme/state am I on?
+2. raka click --name MyButton           # Interact with controls (by x:Name)
+3. raka screenshot -f screenshot.png    # Verify the result visually
+```
+
+Expanded workflow when building or exploring:
+
+```
+1. raka status                          # Situational awareness
+2. raka screenshot -f before.png        # See current state
+3. raka click --name SaveButton         # Interact (x:Name is most reliable)
+4. raka navigate SettingsPage           # Switch pages (more reliable than clicking nav items)
+5. raka screenshot -f after.png         # Verify the change
+```
+
+For **XAML iteration** (adjusting layout, colors, text) — use hot-reload instead of rebuilding:
+
+```
+6. raka hot-reload src/MyApp/           # Start watching XAML files
+   # Edit .xaml files → changes appear in ~0.5s, no rebuild needed
+7. raka screenshot -f tweaked.png       # Verify the live change
 ```
 
 ---
@@ -122,23 +137,25 @@ raka search --automation-id save-btn               # By AutomationId
 **Tip:** Always use `--interactive` when searching for elements you plan to click — it filters out structural elements (ContentPresenter, TextBlock) and returns only actionable controls.
 
 ### `raka click`
-Interact with controls. Supports buttons, checkboxes, toggles, navigation items.
+Interact with controls. Supports buttons, checkboxes, toggles, radio buttons, navigation items.
 ```bash
-raka click e5                                          # By element ID
-raka click --name SaveButton                           # By x:Name (stable across navigation)
+raka click --name SaveButton                           # ⭐ Best method — by x:Name (stable, reliable)
 raka click --type NavigationViewItem --text "Settings"  # By type + text (search + click in one)
 raka click -t Button --text "Submit"                    # Short form
+raka click e5                                          # By element ID (fragile — IDs change after navigation)
 ```
 
-**Best for navigation:** Use `--type NavigationViewItem --text "PageName"` to click nav items without needing to search first.
+**Always prefer `--name` over element IDs.** Element IDs change when the visual tree changes (e.g., page navigation). `x:Name` is stable. When writing XAML, give interactive elements meaningful `x:Name` values.
+
+Text search works on composite content too — a Button containing `StackPanel { Icon, TextBlock "New Note" }` will match `--text "New Note"`.
 
 ### `raka navigate`
-Navigate a Frame to a page directly (more reliable than clicking nav items).
+Navigate a Frame to a page directly — **more reliable than clicking navigation items**.
 ```bash
 raka navigate SettingsPage                # By class name
 raka navigate MyApp.Pages.SettingsPage    # By full type name
 ```
-Also auto-updates the NavigationView selection indicator.
+Also auto-updates the NavigationView selection indicator. Use this as your primary navigation method.
 
 ### `raka screenshot`
 Capture the app visually.
@@ -152,16 +169,17 @@ raka screenshot --mode render --bg "#F3F3F3"   # Explicit light background
 **Mica/Acrylic auto-detect:** If the app uses `MicaBackdrop` or `DesktopAcrylicBackdrop`, Raka automatically switches to render mode with a theme-appropriate background. No special flags needed.
 
 ### `raka get-property` / `raka set-property`
-Read and modify element properties live.
+Read and modify element properties live. `set-property` triggers change events (e.g., TextChanged), making it useful for testing input-driven behavior.
 ```bash
 raka get-property e5 Background           # Read one property
 raka get-property e5 -a                   # Read ALL properties
 
+raka set-property e5 Text "Hello!"        # Set string (fires TextChanged)
+raka set-property e5 Value 22             # Set numeric (e.g., Slider)
 raka set-property e5 Background "#FF5500" # Set color
 raka set-property e5 Margin "10,20,10,20" # Set Thickness
 raka set-property e5 Visibility Collapsed # Set enum
 raka set-property e5 FontSize 24          # Set numeric
-raka set-property e5 Text "Hello!"        # Set string
 ```
 
 ### `raka add-xaml` / `raka replace` / `raka remove`
@@ -174,9 +192,9 @@ raka remove e7
 ```
 
 ### `raka hot-reload`
-Watch XAML files and auto-reload on save — **the killer feature for rapid iteration**.
+Watch XAML files and auto-reload on save — **the killer feature for rapid XAML iteration**.
 ```bash
-# Watch entire project directory
+# Watch entire project directory (recommended)
 raka hot-reload src/MyApp/ --app MyApp
 
 # Watch single file
@@ -184,6 +202,17 @@ raka hot-reload MyPage.xaml --target-name MainPanel --app MyApp
 ```
 
 Directory mode auto-maps XAML files to live elements via `x:Class`. Edit any `.xaml` file → the running app updates in ~0.5s. Pages not currently visible are skipped (navigate to them first).
+
+**When to use hot-reload vs rebuild:**
+| Scenario | Use |
+|----------|-----|
+| Adjusting layout, colors, margins, text in existing XAML | **Hot-reload** — instant, no rebuild |
+| Adding new elements to an existing page | **Hot-reload** — works for XAML-only changes |
+| Creating a brand-new page or code-behind file | **Rebuild** — new files need compilation |
+| Changing C# code (event handlers, logic, models) | **Rebuild** — hot-reload is XAML-only |
+| Tweaking styling after initial build is done | **Hot-reload** — start it and leave it running |
+
+**Recommended pattern:** After the initial `dotnet build` and launch, start hot-reload and leave it running. Make XAML edits and screenshot to verify — no rebuild needed. Only rebuild when you add new C# files or change code-behind.
 
 ### `raka batch`
 Run multiple commands in a single call (saves CLI startup overhead).
@@ -201,71 +230,82 @@ raka ancestors e15
 
 ## Best Practices for AI Agents
 
-### 1. Start every session with `status`
-Before making changes, understand the current state:
-```bash
-raka status --app MyApp
+*Ranked by impact — based on real agent experiments.*
+
+### 1. `click --name` is the most reliable interaction method
+Always use `x:Name` for buttons and controls. When writing XAML, give every interactive element a descriptive `x:Name`:
+```xml
+<Button x:Name="SaveButton" Content="Save" />
+<ToggleSwitch x:Name="AutoSaveToggle" />
 ```
-
-### 2. Use `--format tree` for orientation
-JSON is great for parsing, but tree view is faster to understand:
-```bash
-raka inspect -d 4 --format tree
-```
-
-### 3. Use `--interactive` search for click targets
-Never click a ContentPresenter or TextBlock — use `--interactive` to find the actual control:
-```bash
-raka search --interactive --text "Submit"
-```
-
-### 4. Prefer `raka navigate` over click for page navigation
-`navigate` is more reliable than clicking NavigationViewItems:
-```bash
-raka navigate SettingsPage
-```
-
-### 5. Use `click --type --text` instead of search + click
-One command instead of two:
-```bash
-# Instead of:
-raka search -t NavigationViewItem --text "Settings"  # find ID
-raka click e9                                         # click it
-
-# Do:
-raka click -t NavigationViewItem --text "Settings"    # search + click in one
-```
-
-### 6. Always screenshot after significant changes
-Verify your work visually:
-```bash
-raka screenshot -f after-change.png
-```
-
-### 7. Use hot-reload for XAML iteration
-Don't rebuild for XAML-only changes:
-```bash
-raka hot-reload src/MyApp/ --app MyApp
-# Now edit any .xaml file — changes appear in ~0.5s
-```
-
-### 8. Element IDs change after navigation
-After navigating to a new page, element IDs are reassigned. Always re-search after navigation:
-```bash
-raka navigate SettingsPage
-raka search --interactive --text "Theme"   # Re-search, don't reuse old IDs
-```
-
-### 9. Use `x:Name` for stable references
-Click by `x:Name` is stable across tree changes:
+Then click reliably:
 ```bash
 raka click --name SaveButton
 ```
 
-### 10. Use `batch` for multi-step operations
-Reduces overhead from multiple CLI invocations:
+### 2. Use `status` constantly for situational awareness
+Run it before and after interactions to confirm page, theme, and crash detection:
 ```bash
-raka batch "navigate SettingsPage" "screenshot -f settings.png" "status"
+raka status --app MyApp
+# Check: Is the page what I expect? Did the theme change? Is the element count > 0 (not crashed)?
+```
+
+### 3. Use `navigate` instead of clicking nav items
+Direct page navigation is more reliable than finding and clicking NavigationViewItems:
+```bash
+raka navigate SettingsPage       # Always works
+```
+
+### 4. Screenshot after every significant change
+This is how you verify — visual confirmation beats assumptions:
+```bash
+raka screenshot -f after-change.png
+```
+
+### 5. Use hot-reload for XAML tweaks (don't rebuild)
+After the initial build, start hot-reload and **leave it running**:
+```bash
+raka hot-reload src/MyApp/ --app MyApp
+# Now edit any .xaml file → changes appear in ~0.5s, no rebuild needed
+# Only rebuild when adding new C# files or changing code-behind
+```
+This saves 5-15 seconds per iteration compared to full rebuild cycles.
+
+### 6. Element IDs change after navigation — use `x:Name` or re-search
+After navigating to a new page, element IDs are reassigned:
+```bash
+raka navigate SettingsPage
+raka search --interactive --text "Theme"   # Re-search, don't reuse old IDs
+# Or better: use x:Name which is stable
+raka click --name ThemeSelector
+```
+
+### 7. Use `--interactive` search when looking for click targets
+This filters out structural elements (ContentPresenter, Grid, TextBlock) and returns only actionable controls:
+```bash
+raka search --interactive --text "Submit"
+```
+
+### 8. Test every interactive element after building it
+Don't just screenshot — actually click buttons, toggle switches, and verify behavior:
+```bash
+raka click --name SaveButton
+raka status                       # Did the page change? Did element count change?
+raka screenshot -f after-save.png # Visual confirmation
+```
+
+### 9. Wrap AI/hardware API calls in try/catch
+If the app uses AI APIs, hardware features, or optional capabilities, always wrap in try/catch with availability checks. Verify with Raka that the app doesn't crash:
+```bash
+raka click --name AiSummarizeButton
+raka status    # Element count > 0 means app is still alive
+```
+
+### 10. Use `set-property` for text input and slider values
+Instead of typing, inject values directly. Change events fire automatically:
+```bash
+raka set-property e8 Text "Test content"     # TextChanged fires
+raka set-property e13 Value 22               # Slider.ValueChanged fires
 ```
 
 ---
@@ -305,17 +345,38 @@ Use this to know which XAML file to edit for the current view.
 ### Build a new page and verify
 ```bash
 # 1. Create the page XAML and code-behind files
-# 2. Add navigation to MainWindow
+# 2. Add navigation to MainWindow/NavigationView
 # 3. Build and launch the app
 dotnet build -c Debug && winapp run <output-dir>
 
 # 4. Navigate and verify
-raka navigate NewPage --app MyApp
+raka status --app MyApp
+raka navigate NewPage
 raka screenshot -f new-page.png
 
-# 5. Iterate with hot-reload
+# 5. Start hot-reload for XAML tweaking (leave running)
 raka hot-reload src/MyApp/ --app MyApp
-# Edit NewPage.xaml → changes appear live
+# Edit NewPage.xaml → changes appear live, no rebuild needed
+raka screenshot -f tweaked.png
+```
+
+### Test all interactive elements on a page
+```bash
+raka navigate SettingsPage
+raka screenshot -f settings-before.png
+
+# Click every button, toggle every switch, verify each
+raka click --name LightThemeRadio
+raka status                              # Theme should now be "Light"
+raka click --name AutoSaveToggle
+raka set-property e13 Value 22           # Adjust slider
+raka screenshot -f settings-after.png    # Visual confirmation
+```
+
+### Verify app doesn't crash after an action
+```bash
+raka click --name AiSummarizeButton
+raka status    # If this returns data, app is alive. If it errors, app crashed.
 ```
 
 ### Debug a layout issue
@@ -324,12 +385,4 @@ raka inspect -e e15 -d 5 --format tree    # See the subtree
 raka get-property e15 -a                   # Read all properties
 raka set-property e15 Margin "20,0,20,0"  # Test a fix live
 raka screenshot -f debug.png              # Verify
-```
-
-### Explore an unfamiliar app
-```bash
-raka status --app MyApp
-raka inspect -d 3 --format tree
-raka search --interactive --visible       # All interactive elements
-raka screenshot -f overview.png
 ```
