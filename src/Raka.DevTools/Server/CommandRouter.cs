@@ -46,12 +46,20 @@ internal sealed class CommandRouter
                 Commands.ReplaceXaml => HandleReplace(request.Params),
                 Commands.Status => HandleStatus(),
                 Commands.Navigate => HandleNavigate(request.Params),
+                Commands.ListPages => HandleListPages(),
+                Commands.Type => HandleType(request.Params),
                 _ => new RakaResponse { Success = false, Error = $"Unknown command: {request.Command}" }
             };
         }
         catch (Exception ex)
         {
-            return new RakaResponse { Success = false, Error = ex.Message };
+            var inner = ex.InnerException ?? ex;
+            var frame = inner.StackTrace?.Split('\n').FirstOrDefault(l => !l.Contains("CommandRouter"))?.Trim();
+            return new RakaResponse 
+            { 
+                Success = false, 
+                Error = $"{inner.GetType().Name}: {inner.Message}" + (frame != null ? $"\n  at {frame}" : "")
+            };
         }
     }
 
@@ -199,23 +207,41 @@ internal sealed class CommandRouter
         if (!parameters.HasValue)
             return new RakaResponse { Success = false, Error = "Missing parameters" };
 
-        if (!parameters.Value.TryGetProperty("element", out var elemProp))
-            return new RakaResponse { Success = false, Error = "Missing 'element' parameter" };
         if (!parameters.Value.TryGetProperty("property", out var propProp))
             return new RakaResponse { Success = false, Error = "Missing 'property' parameter" };
         if (!parameters.Value.TryGetProperty("value", out var valProp))
             return new RakaResponse { Success = false, Error = "Missing 'value' parameter" };
 
-        var elementId = elemProp.GetString()!;
         var propertyName = propProp.GetString()!;
         var valueStr = valProp.GetString()!;
 
-        var element = _walker.GetElement(elementId)
-            ?? throw new ArgumentException($"Element '{elementId}' not found. Run 'inspect' first.");
+        DependencyObject? element = null;
+        string elementId = "";
+
+        if (parameters.Value.TryGetProperty("element", out var elemProp) && elemProp.GetString() is string eid)
+        {
+            elementId = eid;
+            element = _walker.GetElement(elementId)
+                ?? throw new ArgumentException($"Element '{elementId}' not found. Run 'inspect' first.");
+        }
+        else if (parameters.Value.TryGetProperty("name", out var nameProp) && nameProp.GetString() is string xname)
+        {
+            var root = GetRoot();
+            if (root == null) return new RakaResponse { Success = false, Error = "No window content available" };
+
+            var results = _walker.Search(root, null, xname, null, null);
+            if (results.Count == 0)
+                return new RakaResponse { Success = false, Error = $"No element found with name '{xname}'" };
+            elementId = results[0].Id;
+            element = _walker.GetElement(elementId)!;
+        }
+        else
+        {
+            return new RakaResponse { Success = false, Error = "Missing 'element' or 'name' parameter" };
+        }
 
         PropertyWriter.SetProperty(element, propertyName, valueStr);
 
-        // Read back to confirm
         var updated = PropertyReader.ReadProperty(element, propertyName);
         return new RakaResponse
         {
@@ -297,7 +323,12 @@ internal sealed class CommandRouter
         // Try Invoke (buttons, hyperlinks, menu items)
         if (peer.GetPattern(PatternInterface.Invoke) is IInvokeProvider invoker)
         {
-            invoker.Invoke();
+            try { invoker.Invoke(); }
+            catch (Exception ex)
+            {
+                var inner = ex.InnerException ?? ex;
+                return new RakaResponse { Success = false, Error = $"Click on {element.GetType().Name} (invoke) failed — {inner.GetType().Name}: {inner.Message}" };
+            }
             return new RakaResponse
             {
                 Success = true,
@@ -308,7 +339,12 @@ internal sealed class CommandRouter
         // Try Toggle (checkboxes, toggle switches, toggle buttons)
         if (peer.GetPattern(PatternInterface.Toggle) is IToggleProvider toggler)
         {
-            toggler.Toggle();
+            try { toggler.Toggle(); }
+            catch (Exception ex)
+            {
+                var inner = ex.InnerException ?? ex;
+                return new RakaResponse { Success = false, Error = $"Click on {element.GetType().Name} (toggle) failed — {inner.GetType().Name}: {inner.Message}" };
+            }
             var newState = toggler.ToggleState.ToString();
             return new RakaResponse
             {
@@ -324,13 +360,21 @@ internal sealed class CommandRouter
             var navView = FindParent<NavigationView>(navItem);
             if (navView != null)
             {
-                // Force selection change by clearing first, then setting
-                var previousItem = navView.SelectedItem;
-                if (!ReferenceEquals(previousItem, navItem))
+                try
                 {
-                    navView.SelectedItem = null;
+                    // Force selection change by clearing first, then setting
+                    var previousItem = navView.SelectedItem;
+                    if (!ReferenceEquals(previousItem, navItem))
+                    {
+                        navView.SelectedItem = null;
+                    }
+                    navView.SelectedItem = navItem;
                 }
-                navView.SelectedItem = navItem;
+                catch (Exception ex)
+                {
+                    var inner = ex.InnerException ?? ex;
+                    return new RakaResponse { Success = false, Error = $"Click on {element.GetType().Name} (select) failed — {inner.GetType().Name}: {inner.Message}" };
+                }
                 return new RakaResponse
                 {
                     Success = true,
@@ -342,7 +386,12 @@ internal sealed class CommandRouter
         // Try SelectionItem (radio buttons, list items)
         if (peer.GetPattern(PatternInterface.SelectionItem) is ISelectionItemProvider selector)
         {
-            selector.Select();
+            try { selector.Select(); }
+            catch (Exception ex)
+            {
+                var inner = ex.InnerException ?? ex;
+                return new RakaResponse { Success = false, Error = $"Click on {element.GetType().Name} (select) failed — {inner.GetType().Name}: {inner.Message}" };
+            }
             return new RakaResponse
             {
                 Success = true,
@@ -853,7 +902,15 @@ internal sealed class CommandRouter
         if (pageType == null)
             return new RakaResponse { Success = false, Error = $"Page type '{pageName}' not found. Use the full type name (e.g., MyApp.Pages.SettingsPage) or just the class name." };
 
-        frame.Navigate(pageType);
+        try
+        {
+            frame.Navigate(pageType);
+        }
+        catch (Exception ex)
+        {
+            var inner = ex.InnerException ?? ex;
+            return new RakaResponse { Success = false, Error = $"Navigation to '{pageName}' failed — {inner.GetType().Name}: {inner.Message}" };
+        }
 
         // Also update NavigationView selection if one exists
         var navView = FindDescendant<NavigationView>(root);
@@ -895,6 +952,116 @@ internal sealed class CommandRouter
                 frame = frame.Name ?? "(unnamed)"
             }, RakaJson.Options)
         };
+    }
+
+    private RakaResponse HandleListPages()
+    {
+        var pages = new List<Dictionary<string, object?>>();
+        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            try
+            {
+                foreach (var type in assembly.GetTypes())
+                {
+                    if (typeof(Microsoft.UI.Xaml.Controls.Page).IsAssignableFrom(type) && !type.IsAbstract)
+                    {
+                        pages.Add(new Dictionary<string, object?>
+                        {
+                            ["fullName"] = type.FullName,
+                            ["name"] = type.Name,
+                            ["assembly"] = assembly.GetName().Name
+                        });
+                    }
+                }
+            }
+            catch { /* ReflectionTypeLoadException for some assemblies */ }
+        }
+
+        // Sort by name for readability
+        pages.Sort((a, b) => string.Compare(a["name"]?.ToString(), b["name"]?.ToString(), StringComparison.OrdinalIgnoreCase));
+
+        return new RakaResponse
+        {
+            Success = true,
+            Data = JsonSerializer.SerializeToElement(pages, RakaJson.Options)
+        };
+    }
+
+    private RakaResponse HandleType(JsonElement? parameters)
+    {
+        if (!parameters.HasValue)
+            return new RakaResponse { Success = false, Error = "Missing parameters" };
+
+        if (!parameters.Value.TryGetProperty("text", out var textProp))
+            return new RakaResponse { Success = false, Error = "Missing 'text' parameter" };
+
+        var text = textProp.GetString()!;
+
+        DependencyObject? element = null;
+        string elementId = "";
+
+        if (parameters.Value.TryGetProperty("element", out var elemProp) && elemProp.GetString() is string eid)
+        {
+            elementId = eid;
+            element = _walker.GetElement(elementId)
+                ?? throw new ArgumentException($"Element '{elementId}' not found. Run 'inspect' first.");
+        }
+        else if (parameters.Value.TryGetProperty("name", out var nameProp) && nameProp.GetString() is string xname)
+        {
+            var root = GetRoot();
+            if (root == null) return new RakaResponse { Success = false, Error = "No window content available" };
+
+            var results = _walker.Search(root, null, xname, null, null);
+            if (results.Count == 0)
+                return new RakaResponse { Success = false, Error = $"No element found with name '{xname}'" };
+            elementId = results[0].Id;
+            element = _walker.GetElement(elementId)!;
+        }
+        else
+        {
+            return new RakaResponse { Success = false, Error = "Missing 'element' or 'name' parameter" };
+        }
+
+        // Try IValueProvider (TextBox, PasswordBox, RichEditBox, AutoSuggestBox, etc.)
+        if (element is UIElement uiElement)
+        {
+            var peer = FrameworkElementAutomationPeer.CreatePeerForElement(uiElement);
+            if (peer?.GetPattern(PatternInterface.Value) is IValueProvider valueProvider)
+            {
+                valueProvider.SetValue(text);
+                return new RakaResponse
+                {
+                    Success = true,
+                    Data = JsonSerializer.SerializeToElement(new Dictionary<string, object?>
+                    {
+                        ["action"] = "type",
+                        ["element"] = elementId,
+                        ["type"] = element.GetType().Name,
+                        ["text"] = text
+                    }, RakaJson.Options)
+                };
+            }
+        }
+
+        // Fallback: try setting Text property directly
+        var textPropInfo = element.GetType().GetProperty("Text");
+        if (textPropInfo != null && textPropInfo.CanWrite)
+        {
+            textPropInfo.SetValue(element, text);
+            return new RakaResponse
+            {
+                Success = true,
+                Data = JsonSerializer.SerializeToElement(new Dictionary<string, object?>
+                {
+                    ["action"] = "set-text",
+                    ["element"] = elementId,
+                    ["type"] = element.GetType().Name,
+                    ["text"] = text
+                }, RakaJson.Options)
+            };
+        }
+
+        return new RakaResponse { Success = false, Error = $"{element.GetType().Name} does not support text input (no IValueProvider or Text property)" };
     }
 
     private static Microsoft.UI.Xaml.Controls.Frame? FindFrame(DependencyObject obj)

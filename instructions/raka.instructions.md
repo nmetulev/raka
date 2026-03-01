@@ -136,6 +136,8 @@ raka search --automation-id save-btn               # By AutomationId
 
 **Tip:** Always use `--interactive` when searching for elements you plan to click — it filters out structural elements (ContentPresenter, TextBlock) and returns only actionable controls.
 
+> **Note:** Text set via `{x:Bind}` compiled bindings is NOT visible to `search --text`. This is a WinUI 3 limitation — compiled bindings bypass the automation/accessibility layer. Use `{Binding}` for text you need to search for, or search by `--name` or `--type` instead.
+
 ### `raka click`
 Interact with controls. Supports buttons, checkboxes, toggles, radio buttons, navigation items.
 ```bash

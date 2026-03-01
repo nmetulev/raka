@@ -130,6 +130,8 @@ public static class Commands
     public const string ReplaceXaml = "replace";
     public const string Status = "status";
     public const string Navigate = "navigate";
+    public const string ListPages = "list-pages";
+    public const string Type = "type";
 }
 
 /// <summary>

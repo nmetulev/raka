@@ -25,6 +25,7 @@ namespace Raka.Cli;
 [JsonSerializable(typeof(ReplaceXamlParams))]
 [JsonSerializable(typeof(NavigateParams))]
 [JsonSerializable(typeof(ClickParams))]
+[JsonSerializable(typeof(TypeParams))]
 internal partial class CliJsonContext : JsonSerializerContext
 {
     private static CliJsonContext? _pretty;
@@ -50,7 +51,7 @@ internal record SearchParams(string? Type = null, string? Name = null, string? T
 
 internal record GetPropertyParams(string Element, string? Property = null, bool? All = null);
 
-internal record SetPropertyParams(string Element, string Property, string Value);
+internal record SetPropertyParams(string? Element, string Property, string Value, string? Name = null);
 
 /// <summary>Shared param type for commands that only need an element ID (click, ancestors).</summary>
 internal record ElementParams(string Element);
@@ -64,3 +65,5 @@ internal record ReplaceXamlParams(string Element, string Xaml);
 internal record NavigateParams(string Page);
 
 internal record ClickParams(string? Element = null, string? Name = null, string? Type = null, string? Text = null);
+
+internal record TypeParams(string Text, string? Element = null, string? Name = null);
