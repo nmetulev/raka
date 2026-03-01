@@ -177,7 +177,7 @@ internal sealed class XamlReconciler
         {
             matches[ni] = (-1, ni, null!); // default: unmatched
 
-            // 1. Try key-based match (x:Name, AutomationId, x:Uid)
+            // 1a. Try key-based match (x:Name, AutomationId, x:Uid)
             var key = GetKey(newChildren[ni]);
             if (key != null && oldByKey.TryGetValue(key, out var oi) && oi < liveChildren.Count && !usedOld.Contains(oi))
             {
@@ -186,7 +186,7 @@ internal sealed class XamlReconciler
                 continue;
             }
 
-            // 2. Try positional match (same index, same type)
+            // 1b. Try positional match (same index, same type)
             if (ni < oldChildren.Count && ni < liveChildren.Count && !usedOld.Contains(ni)
                 && GetTypeName(oldChildren[ni]) == GetTypeName(newChildren[ni]))
             {
@@ -195,12 +195,31 @@ internal sealed class XamlReconciler
             }
         }
 
-        // Phase 2: For still-unmatched new children, find any unused old child of the same type
+        // Phase 2: For still-unmatched new children, try signature matching then type fallback
         for (int ni = 0; ni < matches.Length; ni++)
         {
             if (matches[ni].oldIdx >= 0) continue; // already matched
 
             var newType = GetTypeName(newChildren[ni]);
+            var newSig = GetSignature(newChildren[ni]);
+
+            // 2a. Signature match: same type + matching stable property fingerprint
+            if (newSig != null)
+            {
+                for (int oi = 0; oi < oldChildren.Count && oi < liveChildren.Count; oi++)
+                {
+                    if (!usedOld.Contains(oi) && GetTypeName(oldChildren[oi]) == newType
+                        && GetSignature(oldChildren[oi]) == newSig)
+                    {
+                        matches[ni] = (oi, ni, liveChildren[oi]);
+                        usedOld.Add(oi);
+                        break;
+                    }
+                }
+                if (matches[ni].oldIdx >= 0) continue;
+            }
+
+            // 2b. Type-only fallback: any unused old child of the same type
             for (int oi = 0; oi < oldChildren.Count && oi < liveChildren.Count; oi++)
             {
                 if (!usedOld.Contains(oi) && GetTypeName(oldChildren[oi]) == newType)
@@ -430,9 +449,36 @@ internal sealed class XamlReconciler
 
     // ── XML helpers ───────────────────────────────────────────────────
 
+    // Stable properties used as identity fingerprints for unkeyed elements.
+    // These properties typically identify *which* element it is (not how it looks).
+    private static readonly string[] SignatureProperties =
+        ["Text", "Content", "Header", "Source", "Glyph", "NavigateUri", "Tag", "Label", "Title", "PlaceholderText"];
+
     private static string GetTypeName(XElement elem)
     {
         return elem.Name.LocalName;
+    }
+
+    /// <summary>
+    /// Builds a fingerprint from stable identity properties for matching
+    /// unkeyed elements that may have shifted position.
+    /// </summary>
+    private static string? GetSignature(XElement elem)
+    {
+        // Collect identity property values that are present on this element
+        string? best = null;
+        foreach (var prop in SignatureProperties)
+        {
+            var val = elem.Attribute(prop)?.Value;
+            if (val != null && !val.StartsWith('{'))
+            {
+                // Use the first stable property found as signature.
+                // Concatenate type + property for uniqueness.
+                best = $"{elem.Name.LocalName}:{prop}={val}";
+                break;
+            }
+        }
+        return best;
     }
 
     private static string? GetKey(XElement elem)
