@@ -29,7 +29,15 @@ This repository contains **Raka**, a Playwright-like CLI tool for WinUI 3 app au
 - Raka.DevTools is automatically stripped from Release builds via `.targets`
 - Use `RAKA_DEVTOOLS` preprocessor symbol to guard Raka-specific code
 
+## Copilot CLI plugin
+
+This repo is a Copilot CLI plugin. Install it with:
+```bash
+copilot plugin install ./
+```
+The plugin provides the `raka` skill — full Raka usage guide for AI agents building WinUI 3 apps. See `.github/plugin/` for the plugin manifest and skill definition.
+
 ## Key instructions files
 
-- `.github/instructions/raka.instructions.md` — **How to use Raka** to inspect, modify, and interact with running WinUI 3 apps. Read this when working on WinUI 3 projects that use Raka.
+- `.github/plugin/skills/raka/SKILL.md` — **How to use Raka** to inspect, modify, and interact with running WinUI 3 apps
 - `samples/SampleApp/instructions/` — WinUI 3 best practices, accessibility, security, performance, etc.

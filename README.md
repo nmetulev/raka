@@ -670,6 +670,30 @@ The workflow reads the version, checks if a GitHub Release already exists for it
 
 ---
 
+## GitHub Copilot CLI Plugin
+
+Raka includes a [Copilot CLI plugin](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-creating) that teaches AI agents how to use all Raka commands effectively.
+
+### Install from this repo
+
+```bash
+copilot plugin install nicmet/project-raka
+```
+
+### Install from a local clone
+
+```bash
+copilot plugin install ./
+```
+
+### What it provides
+
+- **`raka` skill** — Complete command reference, best practices, common patterns, and known limitations for using Raka to inspect, modify, and interact with running WinUI 3 apps.
+
+After installing, the skill is automatically available to Copilot CLI agents working on WinUI 3 projects.
+
+---
+
 ## Roadmap
 
 - [x] **Phase 1** — Core CLI + NuGet (inspect, search, properties, click, screenshot)

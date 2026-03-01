@@ -1,6 +1,6 @@
 ---
-description: 'Raka — WinUI 3 app automation tool. Use this to inspect, modify, navigate, screenshot, and hot-reload running WinUI 3 apps during development.'
-applyTo: '**/*.cs, **/*.xaml, **/*.csproj'
+name: raka
+description: Inspect, modify, navigate, screenshot, and hot-reload running WinUI 3 apps using the Raka CLI. Use this skill when building or debugging WinUI 3 applications.
 ---
 
 # Raka — WinUI 3 App Automation for AI Agents

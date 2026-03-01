@@ -1,0 +1,12 @@
+{
+  "name": "raka",
+  "description": "WinUI 3 app automation for AI agents — inspect, modify, navigate, screenshot, and hot-reload running WinUI 3 applications using the Raka CLI",
+  "version": "0.2.1",
+  "author": {
+    "name": "Nikola Metulev"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/nicmet/project-raka",
+  "keywords": ["winui3", "xaml", "automation", "ui-testing", "hot-reload", "windows"],
+  "skills": "skills/"
+}
