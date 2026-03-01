@@ -1281,7 +1281,48 @@ internal sealed class CommandRouter
         foreach (var merged in dict.MergedDictionaries)
         {
             CollectResources(merged, scope + "/merged", filter, results);
+
+            // Also recurse into theme dictionaries within merged dictionaries
+            foreach (var tkvp in merged.ThemeDictionaries)
+            {
+                var tName = tkvp.Key?.ToString() ?? "unknown";
+                if (tkvp.Value is ResourceDictionary tDict)
+                    CollectResources(tDict, scope + $"/merged/theme/{tName}", filter, results);
+            }
         }
+    }
+
+    private static ResourceDictionary? FindResourceDict(ResourceDictionary dict, string key, string scopePrefix,
+        out object? existingValue, out string scope)
+    {
+        scope = scopePrefix;
+        existingValue = null;
+
+        if (dict.ContainsKey(key))
+        {
+            existingValue = dict[key];
+            return dict;
+        }
+
+        // Search theme dictionaries
+        foreach (var kvp in dict.ThemeDictionaries)
+        {
+            if (kvp.Value is ResourceDictionary themeDict && themeDict.ContainsKey(key))
+            {
+                existingValue = themeDict[key];
+                scope = $"{scopePrefix}/theme/{kvp.Key}";
+                return themeDict;
+            }
+        }
+
+        // Recurse into merged dictionaries
+        foreach (var merged in dict.MergedDictionaries)
+        {
+            var result = FindResourceDict(merged, key, scopePrefix + "/merged", out existingValue, out scope);
+            if (result != null) return result;
+        }
+
+        return null;
     }
 
     private RakaResponse HandleSetResource(JsonElement? parameters)
@@ -1319,29 +1360,11 @@ internal sealed class CommandRouter
             }
         }
 
-        // Default: search app resources (including theme dictionaries)
+         // Default: search app resources (including theme dictionaries and merged theme dictionaries)
         if (targetDict == null)
         {
             var appResources = Application.Current.Resources;
-            if (appResources.ContainsKey(key))
-            {
-                targetDict = appResources;
-                existingValue = appResources[key];
-            }
-            else
-            {
-                // Search theme dictionaries
-                foreach (var kvp in appResources.ThemeDictionaries)
-                {
-                    if (kvp.Value is ResourceDictionary themeDict && themeDict.ContainsKey(key))
-                    {
-                        targetDict = themeDict;
-                        existingValue = themeDict[key];
-                        scope = $"app/theme/{kvp.Key}";
-                        break;
-                    }
-                }
-            }
+            targetDict = FindResourceDict(appResources, key, "app", out existingValue, out scope);
         }
 
         if (targetDict == null)
@@ -1358,7 +1381,31 @@ internal sealed class CommandRouter
             return new RakaResponse { Success = false, Error = $"Cannot convert '{valueStr}' to {existingValue?.GetType().Name}: {ex.Message}" };
         }
 
+        bool apply = parameters.Value.TryGetProperty("apply", out var applyProp) && applyProp.GetBoolean();
+
+        // Always update the resource in the dictionary where it was found
         targetDict[key] = newValue;
+
+        bool applied = false;
+        if (apply)
+        {
+            // Also set at top-level app resources for highest priority on new elements
+            Application.Current.Resources[key] = newValue;
+
+            // Reload the current page so new elements pick up the updated resource
+            var root = GetRoot();
+            var frame = root != null ? FindFrame(root) : null;
+            if (frame != null)
+            {
+                var currentPage = frame.Content?.GetType();
+                if (currentPage != null)
+                {
+                    frame.Navigate(typeof(Page));
+                    frame.DispatcherQueue.TryEnqueue(() => frame.Navigate(currentPage));
+                    applied = true;
+                }
+            }
+        }
 
         return new RakaResponse
         {
@@ -1369,7 +1416,8 @@ internal sealed class CommandRouter
                 ["oldValue"] = PropertyReader.FormatValue(existingValue),
                 ["newValue"] = PropertyReader.FormatValue(newValue),
                 ["type"] = newValue?.GetType().Name,
-                ["scope"] = scope
+                ["scope"] = scope,
+                ["applied"] = applied
             }, RakaJson.Options)
         };
     }

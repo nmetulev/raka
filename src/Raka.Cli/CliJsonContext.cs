@@ -75,4 +75,4 @@ internal record StylesParams(string? Element = null, string? Name = null);
 
 internal record ResourcesParams(string? Scope = null, string? Filter = null, string? Theme = null, string? Element = null);
 
-internal record SetResourceParams(string Key, string Value, string? Scope = null);
+internal record SetResourceParams(string Key, string Value, string? Scope = null, bool Apply = false);
