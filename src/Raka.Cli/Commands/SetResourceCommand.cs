@@ -11,7 +11,7 @@ internal static class SetResourceCommand
         var valueArg = new Argument<string>("value") { Description = "New value (e.g., #FF0000, 8, true)" };
         var scopeOption = new Option<string?>("--scope") { Description = "Target scope: page or app (default: auto-detect)" };
         scopeOption.Aliases.Add("-s");
-        var applyOption = new Option<bool>("--apply") { Description = "Force theme toggle to propagate changes to all ThemeResource consumers" };
+        var applyOption = new Option<bool>("--apply") { Description = "Set at app level and reload the current page to pick up new value" };
 
         var command = new Command("set-resource", "Modify a resource value at runtime (propagates to all consumers)")
         {

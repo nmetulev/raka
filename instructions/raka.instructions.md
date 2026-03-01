@@ -17,17 +17,7 @@ Raka is a CLI tool that lets you see, inspect, modify, and interact with a **run
 dotnet add package Raka.DevTools
 ```
 
-**Important:** After adding, check the `.csproj` — if `dotnet add` inserted `<IncludeAssets>` or `<PrivateAssets>` restrictions on the PackageReference, remove them:
-
-```xml
-<!-- ✅ Correct — no asset restrictions -->
-<PackageReference Include="Raka.DevTools" Version="0.1.0" />
-
-<!-- ❌ Wrong — compile asset excluded, auto-init won't work -->
-<PackageReference Include="Raka.DevTools" Version="0.1.0">
-  <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
-</PackageReference>
-```
+That's it — no code changes needed. The NuGet package auto-discovers your Window and starts a pipe server in Debug builds.
 
 ### 2. Build in Debug mode
 
@@ -182,7 +172,71 @@ raka set-property e5 Background "#FF5500" # Set color
 raka set-property e5 Margin "10,20,10,20" # Set Thickness
 raka set-property e5 Visibility Collapsed # Set enum
 raka set-property e5 FontSize 24          # Set numeric
+
+raka set-property --name MyButton Background "#FF5500"  # ⭐ By x:Name (no element ID needed)
 ```
+
+**Tip:** Use `--name` / `-n` to target elements by their `x:Name` without needing to `inspect` first — searches the visual tree automatically.
+
+### `raka type`
+Type text into a TextBox or other text input element. Uses the UI Automation `IValueProvider` for reliable input.
+```bash
+raka type "Hello, World!" --name SearchBox    # ⭐ By x:Name (best)
+raka type "Hello, World!" -e e8               # By element ID
+```
+
+### `raka list-pages`
+List all Page types available in the app's assemblies — useful to discover navigation targets.
+```bash
+raka list-pages
+```
+Output:
+```json
+{ "pages": ["MyApp.Pages.HomePage", "MyApp.Pages.SettingsPage", "MyApp.Pages.ToolsPage"] }
+```
+
+### `raka styles`
+Show the Style applied to an element — reveals all setters, target type, and base style chain.
+```bash
+raka styles e5                                # By element ID
+raka styles --name NavigationViewBackButton   # By x:Name
+```
+Output shows each setter's property name and value:
+```json
+{
+  "targetType": "Button",
+  "setters": [
+    { "property": "Background", "value": "Transparent" },
+    { "property": "Foreground", "value": "#C5FFFFFF" },
+    { "property": "FontSize", "value": "16" }
+  ]
+}
+```
+
+### `raka resources`
+Browse the app's ResourceDictionary — find theme colors, spacing, brushes, styles, and more.
+```bash
+raka resources                                         # All resources
+raka resources --filter Button                         # Filter by key name
+raka resources --filter TextFillColor --scope app      # App-level only
+raka resources --theme Light                           # Light theme entries only
+raka resources --element e5                            # Element-level resources
+```
+
+Returns resource keys, values, types, and scopes (app, page, app/merged/theme/Default, etc.). Recurses into all `MergedDictionaries` and `ThemeDictionaries` to expose WinUI's full resource tree including framework theme brushes.
+
+### `raka set-resource`
+Modify a resource value at runtime. Works for Thickness, CornerRadius, Double, Color, SolidColorBrush, and more.
+```bash
+raka set-resource ButtonPadding "20,10,20,10"          # Change Thickness
+raka set-resource ControlCornerRadius "4"              # Change CornerRadius
+raka set-resource BodyTextBlockFontSize "16"           # Change Double
+raka set-resource ButtonPadding "20,10,20,10" --apply  # Set + reload page
+```
+
+The `--apply` flag sets the resource at the app level AND reloads the current page so newly created elements pick up the change.
+
+> **Limitation:** WinUI 3 theme brushes (`{ThemeResource}`) resolve from compiled `XamlControlsResources` and cannot be overridden at runtime for existing elements. For theme brush changes, use `set-property` on individual elements instead. Non-brush resources (Thickness, Double, CornerRadius) work correctly with `set-resource`.
 
 ### `raka add-xaml` / `raka replace` / `raka remove`
 Inject, replace, or remove XAML elements at runtime.
@@ -303,11 +357,20 @@ raka click --name AiSummarizeButton
 raka status    # Element count > 0 means app is still alive
 ```
 
-### 10. Use `set-property` for text input and slider values
-Instead of typing, inject values directly. Change events fire automatically:
+### 10. Use `type` for text input and `set-property` for other values
+Instead of typing key-by-key, inject values directly. Change events fire automatically:
 ```bash
-raka set-property e8 Text "Test content"     # TextChanged fires
+raka type "Test content" --name SearchBox    # Best for TextBox input
 raka set-property e13 Value 22               # Slider.ValueChanged fires
+```
+
+### 11. Use `resources` to discover theme values before modifying
+Before tweaking colors or spacing, browse what's available:
+```bash
+raka resources --filter Padding              # Find all padding resources
+raka resources --filter CornerRadius         # Find corner radius values
+raka list-pages                              # Discover all navigable pages
+raka styles --name MyButton                  # See what style is applied
 ```
 
 ---
@@ -322,6 +385,8 @@ raka set-property e13 Value 22               # Slider.ValueChanged fires
 | Non-visible pages can't be hot-reloaded | Navigate to the page first, then edit its XAML |
 | `capture` mode + Mica = black screenshots | Auto-detected; use `--mode render` if needed |
 | Hot-reload with `xmlns:local` custom controls | Supported — namespaces are auto-injected |
+| Theme brushes can't be overridden at runtime | WinUI 3 resolves from compiled XamlControlsResources; use `set-property` on individual elements |
+| `{x:Bind}` text not searchable | Compiled bindings bypass automation; use `{Binding}`, `--name`, or `--type` |
 
 ---
 

@@ -9,11 +9,15 @@ raka inspect --app MyApp                          # See the full visual tree
 raka search -t Button --app MyApp                 # Find all buttons
 raka search --interactive --text "Save"           # Find clickable elements by text
 raka set-property e5 Background "#FF5500"         # Change a property live
+raka set-property --name MyBtn Background "#FF5500"  # Change by x:Name (no ID needed)
+raka type "Hello!" --name SearchBox               # Type text into an input
 raka add-xaml e6 "<Button Content='New'/>"        # Inject XAML at runtime
 raka hot-reload src/MyApp/ --app MyApp             # Watch dir & live-reload all XAML
 raka screenshot -f screenshot.png                 # Pixel-perfect screenshot
 raka status --app MyApp                           # Current page, theme, window size
 raka navigate SettingsPage                        # Navigate to a page directly
+raka resources --filter ButtonPadding             # Browse theme resources
+raka styles --name MyButton                       # Inspect element styles
 raka batch "click e1" "screenshot -f out.png"     # Run multiple commands at once
 raka tap-inspect --app Calculator                 # Inspect ANY WinUI 3 app (no NuGet)
 ```
@@ -28,7 +32,7 @@ Raka has two fundamentally different ways to connect to a WinUI 3 app. Choose ba
 
 Add the `Raka.DevTools` NuGet package to your app. Gives you **full read/write access**: inspect, modify properties, inject XAML, click buttons, take screenshots. Best for apps you're building.
 
-**All commands** work in this mode: `inspect`, `search`, `get-property`, `set-property`, `click`, `screenshot`, `add-xaml`, `remove`, `replace`, `hot-reload`, `ancestors`, `status`, `navigate`, `batch`.
+**All commands** work in this mode: `inspect`, `search`, `get-property`, `set-property`, `click`, `type`, `screenshot`, `add-xaml`, `remove`, `replace`, `hot-reload`, `ancestors`, `status`, `navigate`, `batch`, `styles`, `resources`, `set-resource`, `list-pages`.
 
 ### 🔍 TAP Mode (read-only — any app)
 
@@ -42,10 +46,11 @@ Use `tap-inspect` to inject a diagnostics DLL into **any running WinUI 3 app** �
 | **Works on any app** | ❌ Only your apps | ✅ Any WinUI 3 app |
 | **Visual tree** | ✅ Full tree with IDs | ✅ Full tree with handles |
 | **Properties** | ✅ Read + write | ✅ Key properties (read-only) |
-| **Modify UI** | ✅ set-property, add-xaml, replace, remove | ❌ |
-| **Click / interact** | ✅ click | ❌ |
+| **Modify UI** | ✅ set-property, add-xaml, replace, remove, set-resource | ❌ |
+| **Click / interact** | ✅ click, type | ❌ |
 | **Screenshots** | ✅ capture + render modes | ❌ |
 | **XAML injection** | ✅ add-xaml, replace, hot-reload | ❌ |
+| **Style/resource inspection** | ✅ styles, resources, list-pages | ❌ |
 | **Element IDs** | ✅ Stable across commands (e0, e1...) | Instance handles (per-session) |
 
 ---
@@ -235,9 +240,72 @@ raka set-property e5 Visibility "Collapsed"     # Enum
 raka set-property e5 FontSize "24"              # Numeric
 raka set-property e5 CornerRadius "8"           # CornerRadius
 raka set-property e4 Text "Hello, World!"       # String
+raka set-property --name MyBtn Background "#FF5500"  # By x:Name (no element ID needed)
 ```
 
-Changes take effect immediately. Supports colors (hex, named), Thickness, CornerRadius, GridLength, enums, and primitives.
+Changes take effect immediately. Supports colors (hex, named), Thickness, CornerRadius, GridLength, enums, and primitives. Use `--name` / `-n` to target elements by `x:Name` without inspecting first.
+
+---
+
+### `type` — Type text into input elements
+
+```bash
+raka type "Hello, World!" --name SearchBox    # By x:Name (recommended)
+raka type "Hello, World!" -e e8               # By element ID
+```
+
+Uses the UI Automation `IValueProvider` for reliable text input. Falls back to setting the `Text` property directly. Works with TextBox, PasswordBox, and other text inputs.
+
+---
+
+### `styles` — Inspect element styles
+
+```bash
+raka styles e5                                # By element ID
+raka styles --name NavigationViewBackButton   # By x:Name
+```
+
+Shows the complete Style applied to an element: target type, all setters (property name + value), and the base style chain. Useful for understanding why an element looks the way it does.
+
+---
+
+### `resources` — Browse resource dictionaries
+
+```bash
+raka resources                                # All resources (app + merged + themes)
+raka resources --filter ButtonPadding         # Filter by key name
+raka resources --filter TextFillColor         # Find theme brushes
+raka resources --scope app                    # App-level resources only
+raka resources --theme Light                  # Light theme entries only
+raka resources --element e5                   # Element-level resources
+```
+
+Returns resource keys, values, types, and scopes. Recurses into all `MergedDictionaries` and `ThemeDictionaries`, exposing the full WinUI resource tree including framework theme brushes.
+
+---
+
+### `set-resource` — Modify resource values at runtime
+
+```bash
+raka set-resource ButtonPadding "20,10,20,10"          # Change Thickness
+raka set-resource ControlCornerRadius "4"              # Change CornerRadius
+raka set-resource BodyTextBlockFontSize "16"           # Change Double
+raka set-resource ButtonPadding "20,10,20,10" --apply  # Set + reload page
+```
+
+Updates a resource in the dictionary where it was found. The `--apply` flag additionally sets the value at the app level and reloads the current page.
+
+> **Note:** WinUI 3 theme brushes (`{ThemeResource}`) resolve from compiled `XamlControlsResources` and cannot be overridden at runtime for existing elements. Use `set-property` for individual element changes. Non-brush resources (Thickness, Double, CornerRadius) work correctly.
+
+---
+
+### `list-pages` — Discover navigation targets
+
+```bash
+raka list-pages
+```
+
+Scans the app's assemblies for all types deriving from `Page`. Useful for discovering what pages exist before calling `navigate`.
 
 ---
 
@@ -378,7 +446,7 @@ raka batch --app MyApp "navigate SettingsPage" "status" "click e5" "screenshot -
 
 Executes commands sequentially over a single pipe connection — eliminates per-command startup overhead. Returns a JSON array with results for each command.
 
-Supported sub-commands: `click`, `screenshot`, `inspect`, `search`, `status`, `navigate`, `get-property`, `set-property`.
+Supported sub-commands: `click`, `type`, `screenshot`, `inspect`, `search`, `status`, `navigate`, `get-property`, `set-property`, `styles`, `resources`, `set-resource`, `list-pages`.
 
 ---
 
@@ -474,8 +542,7 @@ Raka.DevTools is automatically **excluded from Release builds**. The NuGet packa
 1. **Zero-code auto-init** — Injects a `[ModuleInitializer]` that discovers your `Window` and attaches DevTools automatically in Debug builds
 2. **Debug-only symbol** — Defines `RAKA_DEVTOOLS` only in Debug → `#if RAKA_DEVTOOLS` blocks compile out in Release
 3. **Assembly stripping** — Removes all Raka assembly references in Release → no DLLs in production output
-4. **Development dependency** — Package won't flow to downstream consumers
-5. **Crash prevention** — Hooks `Application.UnhandledException` to suppress transient composition-thread COMExceptions from aggressive tree manipulation
+4. **Crash prevention** — Hooks `Application.UnhandledException` to suppress transient composition-thread COMExceptions from aggressive tree manipulation
 
 **Override:** To force-enable in any configuration (e.g., staging), add to your `.csproj`:
 
@@ -607,7 +674,7 @@ The workflow reads the version, checks if a GitHub Release already exists for it
 
 - [x] **Phase 1** — Core CLI + NuGet (inspect, search, properties, click, screenshot)
 - [x] **Phase 2** — XAML injection (add-xaml, replace, remove)
-- [ ] **Phase 3** — Style/resource/context inspection
+- [x] **Phase 3** — Style/resource/context inspection (styles, resources, set-resource, list-pages, type)
 - [x] **Phase 4** — C++ TAP DLL injection (inspect any WinUI 3 app without NuGet)
 - [x] **Phase 4b** — Hot Reload (watch XAML files, auto-replace on save)
 - [ ] **Phase 5** — TAP-mode write operations via IVisualTreeService3, MCP server, Copilot integration
