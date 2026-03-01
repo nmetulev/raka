@@ -399,8 +399,19 @@ internal static class HotReloadCommand
             {
                 var time = DateTime.Now.ToString("HH:mm:ss");
                 var shortName = Path.GetFileName(filePath);
+                var mode = "replace";
+                var extra = "";
+                if (response.Data.HasValue)
+                {
+                    if (response.Data.Value.TryGetProperty("mode", out var modeProp))
+                        mode = modeProp.GetString() ?? "replace";
+                    if (response.Data.Value.TryGetProperty("patches", out var patchesProp))
+                        extra = $", {patchesProp.GetInt32()} patches";
+                    if (response.Data.Value.TryGetProperty("reconcileError", out var errProp) && errProp.GetString() is string err)
+                        extra += $", reconcile failed: {err}";
+                }
                 var count = response.Data.HasValue ? CountElements(response.Data.Value) : 0;
-                Console.Error.WriteLine($"[{time}] ✓ Reloaded {shortName} ({count} elements)");
+                Console.Error.WriteLine($"[{time}] ✓ Reloaded {shortName} (mode={mode}{extra})");
             }
             else
             {
@@ -695,6 +706,20 @@ internal static class HotReloadCommand
 
                     if (response.Success && response.Data.HasValue)
                     {
+                        // For Page/Window/UserControl, use x:Class to find via Frame
+                        if (rootType is "Page" or "Window" or "UserControl")
+                        {
+                            var xClass = ExtractXClass(xaml);
+                            if (xClass != null)
+                            {
+                                var found = FindPageInFrame(response.Data.Value, xClass);
+                                if (found != null) return found;
+                                // Also try direct className match
+                                found = FindElementByClassName(response.Data.Value, xClass);
+                                if (found != null) return found;
+                            }
+                        }
+
                         return FindElementByType(response.Data.Value, rootType);
                     }
                 }
@@ -702,6 +727,19 @@ internal static class HotReloadCommand
         }
         catch { }
         return null;
+    }
+
+    /// <summary>
+    /// Extracts the x:Class value from XAML content (e.g., "MyApp.Pages.SettingsPage").
+    /// </summary>
+    private static string? ExtractXClass(string xaml)
+    {
+        const string marker = "x:Class=\"";
+        var idx = xaml.IndexOf(marker, StringComparison.Ordinal);
+        if (idx < 0) return null;
+        var start = idx + marker.Length;
+        var end = xaml.IndexOf('"', start);
+        return end > start ? xaml[start..end] : null;
     }
 
     /// <summary>

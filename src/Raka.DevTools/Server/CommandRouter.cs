@@ -19,6 +19,7 @@ namespace Raka.DevTools.Server;
 internal sealed class CommandRouter
 {
     private readonly VisualTreeWalker _walker = new();
+    private readonly XamlReconciler _reconciler = new();
     private Window? _window;
 
     public void SetWindow(Window window)
@@ -615,10 +616,33 @@ internal sealed class CommandRouter
         if (element is not UIElement uiElement)
             return new RakaResponse { Success = false, Error = $"Element {elementId} ({element.GetType().Name}) is not a UIElement" };
 
+        // Try React-style reconciliation first (diffs old vs new XAML, patches in place)
+        var (reconciled, patchCount, reconcileError) = _reconciler.TryReconcile(element, elementId, xaml);
+        if (reconciled)
+        {
+            // Success — tree was patched in place, all runtime state preserved
+            var node = _walker.WalkFrom(uiElement, 2);
+            var reconcileData = new Dictionary<string, object?>
+            {
+                ["id"] = node.Id,
+                ["type"] = node.Type,
+                ["childCount"] = node.ChildCount,
+                ["patches"] = patchCount,
+                ["mode"] = "reconcile"
+            };
+            return new RakaResponse
+            {
+                Success = true,
+                Data = JsonSerializer.SerializeToElement(reconcileData, RakaJson.Options)
+            };
+        }
+
+        // Reconciliation failed (structural change or first load) — fall back to full replacement
+        _reconciler.CacheXaml(elementId, xaml);
+
         var parent = VisualTreeHelper.GetParent(element);
         if (parent == null)
         {
-            // Root element — replace the Window's content directly
             if (_window != null)
             {
                 var parsed2 = ParseXaml(xaml);
@@ -627,7 +651,19 @@ internal sealed class CommandRouter
 
                 _window.Content = newRoot;
                 var rootNode = _walker.WalkFrom(newRoot, 2);
-                return new RakaResponse { Success = true, Data = JsonSerializer.SerializeToElement(rootNode, RakaJson.Options) };
+                var dataDict2 = new Dictionary<string, object?>
+                {
+                    ["id"] = rootNode.Id,
+                    ["type"] = rootNode.Type,
+                    ["childCount"] = rootNode.ChildCount,
+                    ["mode"] = "replace",
+                    ["reconcileError"] = reconcileError
+                };
+                return new RakaResponse
+                {
+                    Success = true,
+                    Data = JsonSerializer.SerializeToElement(dataDict2, RakaJson.Options)
+                };
             }
             return new RakaResponse { Success = false, Error = "Cannot replace root element — no window reference" };
         }
@@ -663,12 +699,19 @@ internal sealed class CommandRouter
             return new RakaResponse { Success = false, Error = $"Cannot replace in {parent.GetType().Name}" };
         }
 
-        var node = _walker.WalkFrom(newElement, 2);
-
+        var node2 = _walker.WalkFrom(newElement, 2);
+        var dataDict = new Dictionary<string, object?>
+        {
+            ["id"] = node2.Id,
+            ["type"] = node2.Type,
+            ["childCount"] = node2.ChildCount,
+            ["mode"] = "replace",
+            ["reconcileError"] = reconcileError
+        };
         return new RakaResponse
         {
             Success = true,
-            Data = JsonSerializer.SerializeToElement(node, RakaJson.Options)
+            Data = JsonSerializer.SerializeToElement(dataDict, RakaJson.Options)
         };
     }
 

@@ -30,7 +30,9 @@ internal sealed class SessionManager
 
         try
         {
-            var json = File.ReadAllText(ActiveSessionFile);
+            using var fs = new FileStream(ActiveSessionFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var reader = new StreamReader(fs);
+            var json = reader.ReadToEnd();
             var session = JsonSerializer.Deserialize(json, CliJsonContext.Default.SessionInfo);
 
             // Verify the target process is still alive
@@ -61,7 +63,9 @@ internal sealed class SessionManager
     {
         Directory.CreateDirectory(SessionDir);
         var json = JsonSerializer.Serialize(session, CliJsonContext.Pretty.SessionInfo);
-        File.WriteAllText(ActiveSessionFile, json);
+        using var fs = new FileStream(ActiveSessionFile, FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
+        using var writer = new StreamWriter(fs);
+        writer.Write(json);
     }
 
     public static void ClearActive()
