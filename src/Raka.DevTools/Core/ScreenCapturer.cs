@@ -32,7 +32,7 @@ internal static class ScreenCapturer
                 device, DirectXPixelFormat.B8G8R8A8UIntNormalized, 1, item.Size);
 
             var session = framePool.CreateCaptureSession(item);
-            try { session.IsBorderRequired = false; } catch { /* older Windows versions */ }
+            try { session.GetType().GetProperty("IsBorderRequired")?.SetValue(session, false); } catch { /* older Windows versions */ }
 
             var tcs = new TaskCompletionSource<Direct3D11CaptureFrame>();
             framePool.FrameArrived += (sender, _) =>
