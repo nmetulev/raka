@@ -258,19 +258,74 @@ internal sealed class VisualTreeWalker
         var contentProp = type.GetProperty("Content");
         if (contentProp != null)
         {
-            var val = contentProp.GetValue(obj)?.ToString();
-            if (val != null && val.Contains(text, StringComparison.OrdinalIgnoreCase))
-                return true;
+            var contentVal = contentProp.GetValue(obj);
+            if (contentVal is string s)
+            {
+                if (s.Contains(text, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            else if (contentVal is DependencyObject contentObj)
+            {
+                // Content is a composite element (e.g. StackPanel with Icon + TextBlock)
+                // Aggregate all text from descendant TextBlocks
+                if (HasDescendantText(contentObj, text))
+                    return true;
+            }
+            else if (contentVal != null)
+            {
+                var val = contentVal.ToString();
+                if (val != null && val.Contains(text, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
         }
 
         var headerProp = type.GetProperty("Header");
         if (headerProp != null)
         {
-            var val = headerProp.GetValue(obj)?.ToString();
+            var headerVal = headerProp.GetValue(obj);
+            if (headerVal is string hs)
+            {
+                if (hs.Contains(text, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            else if (headerVal is DependencyObject headerObj)
+            {
+                if (HasDescendantText(headerObj, text))
+                    return true;
+            }
+            else if (headerVal != null)
+            {
+                var val = headerVal.ToString();
+                if (val != null && val.Contains(text, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Checks if any descendant TextBlock contains the search text.
+    /// Handles composite content like StackPanel { Icon, TextBlock }.
+    /// </summary>
+    private static bool HasDescendantText(DependencyObject root, string text)
+    {
+        // Check if root itself has matching text
+        var textProp = root.GetType().GetProperty("Text");
+        if (textProp != null)
+        {
+            var val = textProp.GetValue(root)?.ToString();
             if (val != null && val.Contains(text, StringComparison.OrdinalIgnoreCase))
                 return true;
         }
 
+        // Recurse into children
+        int count = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < count; i++)
+        {
+            if (HasDescendantText(VisualTreeHelper.GetChild(root, i), text))
+                return true;
+        }
         return false;
     }
 
