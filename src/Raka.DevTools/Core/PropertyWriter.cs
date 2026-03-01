@@ -103,7 +103,7 @@ internal static class PropertyWriter
         return Convert.ChangeType(value, targetType);
     }
 
-    private static Thickness ParseThickness(string value)
+    internal static Thickness ParseThickness(string value)
     {
         var parts = value.Split(',', ' ').Select(s => double.Parse(s.Trim())).ToArray();
         return parts.Length switch
@@ -115,7 +115,7 @@ internal static class PropertyWriter
         };
     }
 
-    private static CornerRadius ParseCornerRadius(string value)
+    internal static CornerRadius ParseCornerRadius(string value)
     {
         var parts = value.Split(',', ' ').Select(s => double.Parse(s.Trim())).ToArray();
         return parts.Length switch
@@ -138,14 +138,14 @@ internal static class PropertyWriter
         return new GridLength(double.Parse(value), GridUnitType.Pixel);
     }
 
-    private static Brush ParseBrush(string value)
+    internal static Brush ParseBrush(string value)
     {
         // Support hex color strings like #FF0000, #AARRGGBB
         var color = ParseColor(value);
         return new SolidColorBrush(color);
     }
 
-    private static Windows.UI.Color ParseColor(string value)
+    internal static Windows.UI.Color ParseColor(string value)
     {
         if (value.StartsWith('#'))
         {

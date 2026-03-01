@@ -48,6 +48,9 @@ internal sealed class CommandRouter
                 Commands.Navigate => HandleNavigate(request.Params),
                 Commands.ListPages => HandleListPages(),
                 Commands.Type => HandleType(request.Params),
+                Commands.Styles => HandleStyles(request.Params),
+                Commands.Resources => HandleResources(request.Params),
+                Commands.SetResource => HandleSetResource(request.Params),
                 _ => new RakaResponse { Success = false, Error = $"Unknown command: {request.Command}" }
             };
         }
@@ -1086,5 +1089,337 @@ internal sealed class CommandRouter
             if (result != null) return result;
         }
         return null;
+    }
+
+    private RakaResponse HandleStyles(JsonElement? parameters)
+    {
+        if (!parameters.HasValue)
+            return new RakaResponse { Success = false, Error = "Missing parameters" };
+
+        DependencyObject? element = null;
+        string elementId = "";
+
+        if (parameters.Value.TryGetProperty("element", out var elemProp) && elemProp.GetString() is string eid)
+        {
+            elementId = eid;
+            element = _walker.GetElement(elementId)
+                ?? throw new ArgumentException($"Element '{elementId}' not found. Run 'inspect' first.");
+        }
+        else if (parameters.Value.TryGetProperty("name", out var nameProp) && nameProp.GetString() is string xname)
+        {
+            var root = GetRoot();
+            if (root == null) return new RakaResponse { Success = false, Error = "No window content available" };
+            var results = _walker.Search(root, null, xname, null, null);
+            if (results.Count == 0)
+                return new RakaResponse { Success = false, Error = $"No element found with name '{xname}'" };
+            elementId = results[0].Id;
+            element = _walker.GetElement(elementId)!;
+        }
+        else
+        {
+            return new RakaResponse { Success = false, Error = "Missing 'element' or 'name' parameter" };
+        }
+
+        if (element is not FrameworkElement fe)
+            return new RakaResponse { Success = false, Error = $"Element {elementId} ({element.GetType().Name}) is not a FrameworkElement" };
+
+        var data = new Dictionary<string, object?>
+        {
+            ["element"] = elementId,
+            ["type"] = fe.GetType().Name
+        };
+
+        var style = fe.Style;
+        if (style != null)
+        {
+            var setters = new List<Dictionary<string, string?>>();
+            foreach (var setterBase in style.Setters)
+            {
+                if (setterBase is Setter setter)
+                {
+                    setters.Add(new Dictionary<string, string?>
+                    {
+                        ["property"] = GetDependencyPropertyName(setter.Property, style.TargetType),
+                        ["value"] = PropertyReader.FormatValue(setter.Value)
+                    });
+                }
+            }
+            data["style"] = new Dictionary<string, object?>
+            {
+                ["targetType"] = style.TargetType?.Name,
+                ["setterCount"] = style.Setters.Count,
+                ["setters"] = setters,
+                ["basedOn"] = style.BasedOn?.TargetType?.Name
+            };
+        }
+        else
+        {
+            data["style"] = null;
+        }
+
+        // Also show implicit style from resources if no explicit style
+        if (style == null)
+        {
+            data["note"] = "No explicit Style set. Element uses default implicit style.";
+        }
+
+        return new RakaResponse
+        {
+            Success = true,
+            Data = JsonSerializer.SerializeToElement(data, RakaJson.Options)
+        };
+    }
+
+    private RakaResponse HandleResources(JsonElement? parameters)
+    {
+        string scope = "all";
+        string? filter = null;
+        string? theme = null;
+        string? elementId = null;
+
+        if (parameters.HasValue)
+        {
+            if (parameters.Value.TryGetProperty("scope", out var scopeProp))
+                scope = scopeProp.GetString() ?? "all";
+            if (parameters.Value.TryGetProperty("filter", out var filterProp))
+                filter = filterProp.GetString();
+            if (parameters.Value.TryGetProperty("theme", out var themeProp))
+                theme = themeProp.GetString();
+            if (parameters.Value.TryGetProperty("element", out var elemProp))
+                elementId = elemProp.GetString();
+        }
+
+        var resources = new List<Dictionary<string, string?>>();
+
+        // Element-level resources
+        if ((scope == "all" || scope == "element") && elementId != null)
+        {
+            var element = _walker.GetElement(elementId);
+            if (element is FrameworkElement fe && fe.Resources.Count > 0)
+                CollectResources(fe.Resources, $"element({elementId})", filter, resources);
+        }
+
+        // Walk up the visual tree for page-level resources
+        if (scope == "all" || scope == "page")
+        {
+            var root = GetRoot();
+            if (root != null)
+            {
+                var frame = FindFrame(root);
+                if (frame?.Content is FrameworkElement page && page.Resources.Count > 0)
+                    CollectResources(page.Resources, "page", filter, resources);
+            }
+        }
+
+        // App-level resources
+        if (scope == "all" || scope == "app")
+        {
+            var appResources = Application.Current.Resources;
+            CollectResources(appResources, "app", filter, resources);
+
+            // Theme dictionaries
+            if (appResources.ThemeDictionaries.Count > 0)
+            {
+                foreach (var kvp in appResources.ThemeDictionaries)
+                {
+                    var themeName = kvp.Key?.ToString() ?? "unknown";
+                    if (theme != null && !themeName.Equals(theme, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (kvp.Value is ResourceDictionary themeDict)
+                        CollectResources(themeDict, $"app/theme/{themeName}", filter, resources);
+                }
+            }
+        }
+
+        return new RakaResponse
+        {
+            Success = true,
+            Data = JsonSerializer.SerializeToElement(new Dictionary<string, object?>
+            {
+                ["count"] = resources.Count,
+                ["scope"] = scope,
+                ["filter"] = filter,
+                ["theme"] = theme,
+                ["resources"] = resources
+            }, RakaJson.Options)
+        };
+    }
+
+    private static void CollectResources(ResourceDictionary dict, string scope, string? filter,
+        List<Dictionary<string, string?>> results)
+    {
+        foreach (var key in dict.Keys)
+        {
+            var keyStr = key?.ToString() ?? "";
+            if (filter != null && !keyStr.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            try
+            {
+                var value = dict[key];
+                results.Add(new Dictionary<string, string?>
+                {
+                    ["key"] = keyStr,
+                    ["value"] = PropertyReader.FormatValue(value),
+                    ["type"] = value?.GetType().Name,
+                    ["scope"] = scope
+                });
+            }
+            catch
+            {
+                results.Add(new Dictionary<string, string?>
+                {
+                    ["key"] = keyStr,
+                    ["value"] = "(error reading)",
+                    ["type"] = null,
+                    ["scope"] = scope
+                });
+            }
+        }
+
+        // Recurse into merged dictionaries
+        foreach (var merged in dict.MergedDictionaries)
+        {
+            CollectResources(merged, scope + "/merged", filter, results);
+        }
+    }
+
+    private RakaResponse HandleSetResource(JsonElement? parameters)
+    {
+        if (!parameters.HasValue)
+            return new RakaResponse { Success = false, Error = "Missing parameters" };
+
+        if (!parameters.Value.TryGetProperty("key", out var keyProp))
+            return new RakaResponse { Success = false, Error = "Missing 'key' parameter" };
+        if (!parameters.Value.TryGetProperty("value", out var valProp))
+            return new RakaResponse { Success = false, Error = "Missing 'value' parameter" };
+
+        var key = keyProp.GetString()!;
+        var valueStr = valProp.GetString()!;
+
+        string scope = "app";
+        if (parameters.Value.TryGetProperty("scope", out var scopeProp))
+            scope = scopeProp.GetString() ?? "app";
+
+        // Find the resource dictionary to modify
+        ResourceDictionary? targetDict = null;
+        object? existingValue = null;
+
+        if (scope == "page")
+        {
+            var root = GetRoot();
+            var frame = root != null ? FindFrame(root) : null;
+            if (frame?.Content is FrameworkElement page)
+            {
+                if (page.Resources.ContainsKey(key))
+                {
+                    targetDict = page.Resources;
+                    existingValue = page.Resources[key];
+                }
+            }
+        }
+
+        // Default: search app resources (including theme dictionaries)
+        if (targetDict == null)
+        {
+            var appResources = Application.Current.Resources;
+            if (appResources.ContainsKey(key))
+            {
+                targetDict = appResources;
+                existingValue = appResources[key];
+            }
+            else
+            {
+                // Search theme dictionaries
+                foreach (var kvp in appResources.ThemeDictionaries)
+                {
+                    if (kvp.Value is ResourceDictionary themeDict && themeDict.ContainsKey(key))
+                    {
+                        targetDict = themeDict;
+                        existingValue = themeDict[key];
+                        scope = $"app/theme/{kvp.Key}";
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (targetDict == null)
+            return new RakaResponse { Success = false, Error = $"Resource '{key}' not found in {scope} resources" };
+
+        // Parse the new value based on the existing value's type
+        object? newValue;
+        try
+        {
+            newValue = ConvertResourceValue(valueStr, existingValue);
+        }
+        catch (Exception ex)
+        {
+            return new RakaResponse { Success = false, Error = $"Cannot convert '{valueStr}' to {existingValue?.GetType().Name}: {ex.Message}" };
+        }
+
+        targetDict[key] = newValue;
+
+        return new RakaResponse
+        {
+            Success = true,
+            Data = JsonSerializer.SerializeToElement(new Dictionary<string, object?>
+            {
+                ["key"] = key,
+                ["oldValue"] = PropertyReader.FormatValue(existingValue),
+                ["newValue"] = PropertyReader.FormatValue(newValue),
+                ["type"] = newValue?.GetType().Name,
+                ["scope"] = scope
+            }, RakaJson.Options)
+        };
+    }
+
+    private static object? ConvertResourceValue(string valueStr, object? existingValue)
+    {
+        if (existingValue == null) return valueStr;
+
+        return existingValue switch
+        {
+            Microsoft.UI.Xaml.Media.SolidColorBrush => PropertyWriter.ParseBrush(valueStr),
+            Windows.UI.Color => PropertyWriter.ParseColor(valueStr),
+            double => double.Parse(valueStr),
+            int => int.Parse(valueStr),
+            bool => bool.Parse(valueStr),
+            Thickness => PropertyWriter.ParseThickness(valueStr),
+            CornerRadius => PropertyWriter.ParseCornerRadius(valueStr),
+            string => valueStr,
+            _ => valueStr
+        };
+    }
+
+    private static string GetDependencyPropertyName(DependencyProperty? dp, Type? targetType)
+    {
+        if (dp == null) return "(unknown)";
+
+        // Search the target type's static properties for a match
+        var searchTypes = new List<Type>();
+        if (targetType != null) searchTypes.Add(targetType);
+        // Also search common base types
+        searchTypes.AddRange(new[] { typeof(FrameworkElement), typeof(UIElement), typeof(Control) });
+
+        foreach (var type in searchTypes)
+        {
+            var props = type.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.FlattenHierarchy)
+                .Where(p => p.PropertyType == typeof(DependencyProperty));
+            foreach (var prop in props)
+            {
+                try
+                {
+                    if (ReferenceEquals(prop.GetValue(null), dp))
+                    {
+                        var name = prop.Name;
+                        return name.EndsWith("Property") ? name[..^8] : name;
+                    }
+                }
+                catch { }
+            }
+        }
+
+        return dp.ToString() ?? "(unknown)";
     }
 }

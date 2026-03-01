@@ -26,6 +26,9 @@ namespace Raka.Cli;
 [JsonSerializable(typeof(NavigateParams))]
 [JsonSerializable(typeof(ClickParams))]
 [JsonSerializable(typeof(TypeParams))]
+[JsonSerializable(typeof(StylesParams))]
+[JsonSerializable(typeof(ResourcesParams))]
+[JsonSerializable(typeof(SetResourceParams))]
 internal partial class CliJsonContext : JsonSerializerContext
 {
     private static CliJsonContext? _pretty;
@@ -67,3 +70,9 @@ internal record NavigateParams(string Page);
 internal record ClickParams(string? Element = null, string? Name = null, string? Type = null, string? Text = null);
 
 internal record TypeParams(string Text, string? Element = null, string? Name = null);
+
+internal record StylesParams(string? Element = null, string? Name = null);
+
+internal record ResourcesParams(string? Scope = null, string? Filter = null, string? Theme = null, string? Element = null);
+
+internal record SetResourceParams(string Key, string Value, string? Scope = null);

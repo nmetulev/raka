@@ -114,7 +114,7 @@ internal static class PropertyReader
         }
     }
 
-    private static string? FormatValue(object? value)
+    internal static string? FormatValue(object? value)
     {
         if (value == null) return null;
 

@@ -132,6 +132,7 @@ public static class Commands
     public const string Navigate = "navigate";
     public const string ListPages = "list-pages";
     public const string Type = "type";
+    public const string SetResource = "set-resource";
 }
 
 /// <summary>
