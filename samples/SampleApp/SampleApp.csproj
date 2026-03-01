@@ -41,7 +41,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.7705" />
-    <PackageReference Include="Microsoft.Windows.SDK.BuildTools.WinApp" Version="0.2.1-alzollin-vsc.95">
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools.WinApp" Version="0.2.1-nm-vsc-debug-output.99">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
