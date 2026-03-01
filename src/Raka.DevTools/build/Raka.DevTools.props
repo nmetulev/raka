@@ -3,21 +3,17 @@
   <!--
     Raka.DevTools: Development-only WinUI 3 automation tool.
 
-    In Debug builds:
-      - Defines RAKA_DEVTOOLS preprocessor symbol
-      - Assembly is referenced normally
+    Defaults to ENABLED (defines RAKA_DEVTOOLS, includes auto-init source).
+    The .targets file strips references and symbols for Release builds,
+    where $(Configuration) is guaranteed to be set.
 
-    In Release builds:
-      - Symbol is not defined (#if RAKA_DEVTOOLS blocks are excluded)
-      - Assembly references are removed (zero runtime footprint)
-
-    Users can override with <RakaDevToolsEnabled>true</RakaDevToolsEnabled>
-    to force-enable in any configuration.
+    Users can override:
+      <RakaDevToolsEnabled>false</RakaDevToolsEnabled>  to force-disable
+      <RakaDevToolsEnabled>true</RakaDevToolsEnabled>   to force-enable (even in Release)
   -->
 
   <PropertyGroup>
-    <RakaDevToolsEnabled Condition="'$(RakaDevToolsEnabled)' == '' And '$(Configuration)' == 'Debug'">true</RakaDevToolsEnabled>
-    <RakaDevToolsEnabled Condition="'$(RakaDevToolsEnabled)' == ''">false</RakaDevToolsEnabled>
+    <RakaDevToolsEnabled Condition="'$(RakaDevToolsEnabled)' == ''">true</RakaDevToolsEnabled>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(RakaDevToolsEnabled)' == 'true'">

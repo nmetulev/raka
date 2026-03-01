@@ -1,7 +1,30 @@
 <Project>
 
   <!--
-    Strip Raka.DevTools assembly references in Release builds.
+    Disable Raka.DevTools in Release builds.
+    .targets runs after $(Configuration) is resolved, so this check is reliable.
+    The .props file defaults RakaDevToolsEnabled=true; we override to false here
+    for Release, then strip references and the RAKA_DEVTOOLS symbol.
+
+    To force-enable in Release, set in Directory.Build.targets (not .csproj):
+      <RakaDevToolsEnabled>force</RakaDevToolsEnabled>
+  -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release' And '$(RakaDevToolsEnabled)' != 'force'">
+    <RakaDevToolsEnabled>false</RakaDevToolsEnabled>
+  </PropertyGroup>
+
+  <!-- Normalize 'force' back to 'true' for downstream checks -->
+  <PropertyGroup Condition="'$(RakaDevToolsEnabled)' == 'force'">
+    <RakaDevToolsEnabled>true</RakaDevToolsEnabled>
+  </PropertyGroup>
+
+  <!-- Strip the RAKA_DEVTOOLS symbol when disabled (was added by .props) -->
+  <PropertyGroup Condition="'$(RakaDevToolsEnabled)' != 'true'">
+    <DefineConstants>$(DefineConstants.Replace('RAKA_DEVTOOLS', ''))</DefineConstants>
+  </PropertyGroup>
+
+  <!--
+    Strip Raka.DevTools assembly references when disabled.
     This ensures zero runtime footprint in production.
   -->
   <Target Name="_RemoveRakaDevToolsInRelease"
@@ -15,7 +38,7 @@
   </Target>
 
   <!--
-    Auto-initialize DevTools in Debug builds.
+    Auto-initialize DevTools when enabled.
     Injects a [ModuleInitializer] that discovers and attaches to Window objects.
     Users can still call UseRakaDevTools() explicitly (double-init is safe).
   -->
