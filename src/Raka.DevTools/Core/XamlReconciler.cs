@@ -162,94 +162,120 @@ internal sealed class XamlReconciler
         var newChildren = GetContentElements(newXml);
         var liveChildren = GetLiveContentChildren(live);
 
-        if (oldChildren.Count != newChildren.Count)
-        {
-            // Structural change in children — try key-based matching
-            if (!TryReconcileWithKeys(live, liveChildren, oldChildren, newChildren, ref patches))
-                throw new InvalidOperationException("Child count changed without matching keys");
+        if (oldChildren.Count == 0 && newChildren.Count == 0)
             return;
+
+        // Build identity maps: key → index in old/live list
+        var oldByKey = BuildKeyMap(oldChildren);
+
+        // Phase 1: Match each new child to an old/live child using multi-factor identity
+        //   Priority: key match > positional match (same type at same index)
+        var matches = new (int oldIdx, int newIdx, DependencyObject liveElem)[newChildren.Count];
+        var usedOld = new HashSet<int>();
+
+        for (int ni = 0; ni < newChildren.Count; ni++)
+        {
+            matches[ni] = (-1, ni, null!); // default: unmatched
+
+            // 1. Try key-based match (x:Name, AutomationId, x:Uid)
+            var key = GetKey(newChildren[ni]);
+            if (key != null && oldByKey.TryGetValue(key, out var oi) && oi < liveChildren.Count && !usedOld.Contains(oi))
+            {
+                matches[ni] = (oi, ni, liveChildren[oi]);
+                usedOld.Add(oi);
+                continue;
+            }
+
+            // 2. Try positional match (same index, same type)
+            if (ni < oldChildren.Count && ni < liveChildren.Count && !usedOld.Contains(ni)
+                && GetTypeName(oldChildren[ni]) == GetTypeName(newChildren[ni]))
+            {
+                matches[ni] = (ni, ni, liveChildren[ni]);
+                usedOld.Add(ni);
+            }
         }
 
-        // Same count — match positionally, using keys to detect reorders
-        int commonCount = Math.Min(oldChildren.Count, liveChildren.Count);
-
-        for (int i = 0; i < commonCount; i++)
+        // Phase 2: For still-unmatched new children, find any unused old child of the same type
+        for (int ni = 0; ni < matches.Length; ni++)
         {
-            if (GetTypeName(oldChildren[i]) == GetTypeName(newChildren[i]))
+            if (matches[ni].oldIdx >= 0) continue; // already matched
+
+            var newType = GetTypeName(newChildren[ni]);
+            for (int oi = 0; oi < oldChildren.Count && oi < liveChildren.Count; oi++)
             {
-                // Same type at same position → reconcile in place (state preserved!)
-                ReconcileNode(liveChildren[i], oldChildren[i], newChildren[i], ref patches);
+                if (!usedOld.Contains(oi) && GetTypeName(oldChildren[oi]) == newType)
+                {
+                    matches[ni] = (oi, ni, liveChildren[oi]);
+                    usedOld.Add(oi);
+                    break;
+                }
             }
-            else
+        }
+
+        // Phase 3: Apply — reconcile matched, create unmatched, remove orphans
+        var panel = live as Panel;
+        var resultChildren = new List<UIElement>();
+
+        for (int ni = 0; ni < matches.Length; ni++)
+        {
+            var (oldIdx, _, liveElem) = matches[ni];
+
+            if (oldIdx >= 0 && GetTypeName(oldChildren[oldIdx]) == GetTypeName(newChildren[ni]))
             {
-                // Type changed at this position → fall back
-                throw new InvalidOperationException($"Child type changed at index {i}");
+                // Matched + same type → reconcile in place (state preserved!)
+                try
+                {
+                    ReconcileNode(liveElem, oldChildren[oldIdx], newChildren[ni], ref patches);
+                    if (liveElem is UIElement uie)
+                        resultChildren.Add(uie);
+                    continue;
+                }
+                catch
+                {
+                    // Reconciliation of this subtree failed — fall through to recreate
+                }
             }
+
+            // Unmatched or type changed or reconciliation failed → create new element
+            if (panel != null)
+            {
+                try
+                {
+                    var childXaml = EnsureXmlns(newChildren[ni].ToString());
+                    var parsed = XamlReader.Load(childXaml);
+                    if (parsed is UIElement newUie)
+                    {
+                        resultChildren.Add(newUie);
+                        patches++;
+                        continue;
+                    }
+                }
+                catch { /* fall through: skip this child */ }
+            }
+
+            // Can't create either — keep the old element if we had one
+            if (oldIdx >= 0 && liveElem is UIElement fallbackUie)
+                resultChildren.Add(fallbackUie);
+        }
+
+        // Phase 4: Replace panel children if the list changed
+        if (panel != null && !ChildListEqual(panel.Children, resultChildren))
+        {
+            // Detach all, then re-add in new order
+            panel.Children.Clear();
+            foreach (var child in resultChildren)
+                panel.Children.Add(child);
+            patches++;
         }
     }
 
-    private bool TryReconcileWithKeys(
-        DependencyObject parent,
-        List<DependencyObject> liveChildren,
-        List<XElement> oldChildren,
-        List<XElement> newChildren,
-        ref int patches)
+    private static bool ChildListEqual(UIElementCollection current, List<UIElement> expected)
     {
-        // Build key maps (x:Name → index)
-        var oldByKey = BuildKeyMap(oldChildren);
-        var newByKey = BuildKeyMap(newChildren);
-
-        // If any keyed element exists in both old and new, we can match them
-        // For now, only handle simple add/remove at the end when keys match
-        if (parent is not Panel panel) return false;
-
-        // Try to match all new children to old children by key or position
-        var matched = new List<(XElement oldElem, XElement newElem, DependencyObject liveElem)>();
-
-        foreach (var newChild in newChildren)
+        if (current.Count != expected.Count) return false;
+        for (int i = 0; i < current.Count; i++)
         {
-            var key = GetKey(newChild);
-            if (key != null && oldByKey.TryGetValue(key, out var oldIdx) && oldIdx < liveChildren.Count)
-            {
-                matched.Add((oldChildren[oldIdx], newChild, liveChildren[oldIdx]));
-            }
+            if (!ReferenceEquals(current[i], expected[i])) return false;
         }
-
-        // Reconcile matched elements in place
-        foreach (var (oldElem, newElem, liveElem) in matched)
-        {
-            if (GetTypeName(oldElem) == GetTypeName(newElem))
-                ReconcileNode(liveElem, oldElem, newElem, ref patches);
-        }
-
-        // For added children: parse and add via XamlReader
-        if (newChildren.Count > oldChildren.Count)
-        {
-            for (int i = oldChildren.Count; i < newChildren.Count; i++)
-            {
-                var childXaml = newChildren[i].ToString();
-                var parsed = (DependencyObject)XamlReader.Load(childXaml);
-                if (parsed is UIElement uie)
-                {
-                    panel.Children.Add(uie);
-                    patches++;
-                }
-            }
-        }
-
-        // For removed children: remove from the end
-        if (newChildren.Count < oldChildren.Count)
-        {
-            for (int i = oldChildren.Count - 1; i >= newChildren.Count; i--)
-            {
-                if (i < panel.Children.Count)
-                {
-                    panel.Children.RemoveAt(i);
-                    patches++;
-                }
-            }
-        }
-
         return true;
     }
 
@@ -411,7 +437,10 @@ internal sealed class XamlReconciler
 
     private static string? GetKey(XElement elem)
     {
+        // Multi-factor identity: x:Name > AutomationProperties.AutomationId > x:Uid > Name
         return elem.Attribute(XamlNs + "Name")?.Value
+            ?? elem.Attribute("AutomationProperties.AutomationId")?.Value
+            ?? elem.Attribute(XamlNs + "Uid")?.Value
             ?? elem.Attribute("Name")?.Value;
     }
 
