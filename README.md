@@ -6,19 +6,21 @@ Raka lets AI agents (and humans) see, inspect, modify, and interact with running
 
 ```
 raka inspect --app MyApp                          # See the full visual tree
-raka search -t Button --app MyApp                 # Find all buttons
+raka search -t Button --from-page                 # Find buttons on current page
 raka search --interactive --text "Save"           # Find clickable elements by text
-raka set-property e5 Background "#FF5500"         # Change a property live
-raka set-property --name MyBtn Background "#FF5500"  # Change by x:Name (no ID needed)
-raka type "Hello!" --name SearchBox               # Type text into an input
-raka add-xaml e6 "<Button Content='New'/>"        # Inject XAML at runtime
-raka hot-reload src/MyApp/ --app MyApp             # Watch dir & live-reload all XAML
+raka click --name SaveButton                      # Real OS mouse click
+raka invoke --name SaveButton                     # Programmatic click (fast, no visual)
+raka type "Hello!" --name SearchBox               # Real keystrokes via SendInput
+raka hotkey Ctrl+S                                # Send keyboard shortcuts
+raka focus --name SearchBox                       # Set keyboard focus
+raka scroll-into-view --name SaveButton           # Scroll off-screen element into view
+raka set-property --name MyBtn Background "#FF5500"  # Change a property live
 raka screenshot -f screenshot.png                 # Pixel-perfect screenshot
-raka status --app MyApp                           # Current page, theme, window size
-raka navigate SettingsPage                        # Navigate to a page directly
+raka screenshot e5 --state PointerOver -f hover.png  # Capture with visual state
+raka navigate SettingsPage --param "id-42"        # Navigate with parameter
+raka get-states --name MyButton                   # List visual states
+raka hot-reload src/MyApp/ --app MyApp            # Watch dir & live-reload all XAML
 raka resources --filter ButtonPadding             # Browse theme resources
-raka styles --name MyButton                       # Inspect element styles
-raka batch "click e1" "screenshot -f out.png"     # Run multiple commands at once
 raka tap-inspect --app Calculator                 # Inspect ANY WinUI 3 app (no NuGet)
 ```
 
@@ -32,7 +34,7 @@ Raka has two fundamentally different ways to connect to a WinUI 3 app. Choose ba
 
 Add the `Raka.DevTools` NuGet package to your app. Gives you **full read/write access**: inspect, modify properties, inject XAML, click buttons, take screenshots. Best for apps you're building.
 
-**All commands** work in this mode: `inspect`, `search`, `get-property`, `set-property`, `click`, `type`, `screenshot`, `add-xaml`, `remove`, `replace`, `hot-reload`, `ancestors`, `status`, `navigate`, `batch`, `styles`, `resources`, `set-resource`, `list-pages`.
+**All commands** work in this mode: `inspect`, `search`, `get-property`, `set-property`, `click`, `invoke`, `type`, `hotkey`, `focus`, `scroll-into-view`, `screenshot`, `add-xaml`, `remove`, `replace`, `hot-reload`, `ancestors`, `status`, `navigate`, `batch`, `styles`, `resources`, `set-resource`, `get-states`, `set-state`, `list-pages`.
 
 ### 🔍 TAP Mode (read-only — any app)
 
@@ -47,7 +49,7 @@ Use `tap-inspect` to inject a diagnostics DLL into **any running WinUI 3 app** �
 | **Visual tree** | ✅ Full tree with IDs | ✅ Full tree with handles |
 | **Properties** | ✅ Read + write | ✅ Key properties (read-only) |
 | **Modify UI** | ✅ set-property, add-xaml, replace, remove, set-resource | ❌ |
-| **Click / interact** | ✅ click, type | ❌ |
+| **Click / interact** | ✅ click, invoke, type, hotkey, focus, scroll-into-view | ❌ |
 | **Screenshots** | ✅ capture + render modes | ❌ |
 | **XAML injection** | ✅ add-xaml, replace, hot-reload | ❌ |
 | **Style/resource inspection** | ✅ styles, resources, list-pages | ❌ |
@@ -176,6 +178,7 @@ Use `raka list` to see active connections and `raka disconnect` to clear the def
 raka inspect                      # Full tree
 raka inspect -d 2                 # Limit depth to 2 levels
 raka inspect -e e5                # Subtree from element e5
+raka inspect -d 3 --from-page     # Scope to current Page (skip framework nesting)
 ```
 
 Returns JSON with element IDs (`e0`, `e1`, ...), types, names, bounds, and children. Element IDs are stable across commands and used by all other commands.
@@ -220,6 +223,7 @@ raka search --property Tag=settings     # By property value
 raka search --interactive               # Only clickable/toggleable elements
 raka search --visible                   # Only visible elements
 raka search --interactive --text "Save" # Combine filters (AND logic)
+raka search -t Button --from-page       # Scope to current Page only
 ```
 
 Multiple criteria can be combined (AND logic). The `--interactive` filter is especially useful for agents — it returns only elements that can be clicked, toggled, or selected (via UI Automation patterns), filtering out structural elements like ContentPresenter and TextBlock that aren't directly actionable.
@@ -252,9 +256,10 @@ Changes take effect immediately. Supports colors (hex, named), Thickness, Corner
 ```bash
 raka type "Hello, World!" --name SearchBox    # By x:Name (recommended)
 raka type "Hello, World!" -e e8               # By element ID
+raka type "slow typing" --name Input -d 100   # Custom inter-key delay (ms)
 ```
 
-Uses the UI Automation `IValueProvider` for reliable text input. Falls back to setting the `Text` property directly. Works with TextBox, PasswordBox, and other text inputs.
+Uses **real keystroke simulation** via Win32 SendInput. Triggers the full input pipeline — `TextChanged` fires with `UserInput` reason, AutoSuggestBox shows dropdown suggestions. The element is focused first, then keystrokes are sent one at a time.
 
 ---
 
@@ -389,13 +394,21 @@ Removes the element from the visual tree. The element and its children are no lo
 
 ---
 
-### `click` — Interact with controls
+### `click` — Real mouse click
 
 ```bash
-raka click e5                     # Invoke a button
-raka click e6                     # Toggle a checkbox
-raka click e7                     # Select a radio button
-raka click e3                     # Select a NavigationViewItem (triggers navigation)
+raka click --name SaveButton                  # By x:Name (recommended)
+raka click --type Button --text "Submit"      # By type + text
+raka click e5                                 # By element ID
+```
+
+Performs a **real OS mouse click** at the element's screen coordinates via Win32 SendInput. Triggers the full visual event pipeline — buttons show press animation, ListView items receive ItemClick events. Requires the app window to be in the foreground.
+
+### `invoke` — Programmatic interaction
+
+```bash
+raka invoke --name SaveButton                 # Programmatic click (fast, no visual feedback)
+raka invoke e5                                # By element ID
 ```
 
 Uses the UI Automation peer system. Supports:
@@ -404,6 +417,8 @@ Uses the UI Automation peer system. Supports:
 - **NavigationViewItems** → Select (properly triggers `SelectionChanged` for navigation)
 - **RadioButtons / ListItems** → Select
 
+Use `invoke` for fast automation or when the app is not in the foreground. Use `click` when you need real visual feedback.
+
 ---
 
 ### `navigate` — Navigate to a page
@@ -411,9 +426,58 @@ Uses the UI Automation peer system. Supports:
 ```bash
 raka navigate SettingsPage --app MyApp           # Navigate by class name
 raka navigate MyApp.Pages.SettingsPage           # Navigate by full type name
+raka navigate NoteDetailPage --param "note-42"   # With navigation parameter
 ```
 
 Finds the first `Frame` in the visual tree and calls `Frame.Navigate()` directly. Also updates the `NavigationView.SelectedItem` if a matching navigation item is found (matches by `Tag`). More reliable than `click` for page navigation.
+
+---
+
+### `hotkey` — Send keyboard shortcuts
+
+```bash
+raka hotkey Tab                               # Tab key
+raka hotkey Ctrl+S                            # Save shortcut
+raka hotkey Ctrl+Z                            # Undo
+raka hotkey Shift+Tab                         # Reverse tab
+raka hotkey Alt+F4                            # Close window
+```
+
+Sends keyboard shortcuts via Win32 SendInput. Supports modifiers: Ctrl, Alt, Shift, Win. Keys: A-Z, 0-9, F1-F12, Tab, Enter, Escape, Delete, Home, End, PageUp, PageDown, arrow keys, Space, Backspace.
+
+---
+
+### `focus` — Set keyboard focus
+
+```bash
+raka focus --name SearchBox                   # By x:Name
+raka focus e5                                 # By element ID
+```
+
+Sets keyboard focus on the specified element. Useful before `type` or `hotkey` to ensure the correct element receives input.
+
+---
+
+### `scroll-into-view` — Scroll element into viewport
+
+```bash
+raka scroll-into-view --name SaveButton       # By x:Name
+raka scroll-into-view e12                     # By element ID
+```
+
+Calls `StartBringIntoView()` on the element. Essential before `click` when elements are off-screen in a ScrollViewer or ListView — `click` uses screen coordinates and will miss off-screen elements.
+
+---
+
+### `get-states` / `set-state` — Visual state management
+
+```bash
+raka get-states --name MyButton               # List all visual state groups
+raka set-state --name MyButton --state PointerOver   # Apply hover state
+raka set-state --name MyButton --state Normal        # Revert to normal
+```
+
+Inspect and manipulate VisualStateManager states on controls. Useful for verifying hover/pressed/disabled styling.
 
 ---
 
@@ -446,7 +510,7 @@ raka batch --app MyApp "navigate SettingsPage" "status" "click e5" "screenshot -
 
 Executes commands sequentially over a single pipe connection — eliminates per-command startup overhead. Returns a JSON array with results for each command.
 
-Supported sub-commands: `click`, `type`, `screenshot`, `inspect`, `search`, `status`, `navigate`, `get-property`, `set-property`, `styles`, `resources`, `set-resource`, `list-pages`.
+Supported sub-commands: `click`, `invoke`, `type`, `hotkey`, `focus`, `scroll-into-view`, `screenshot`, `inspect`, `search`, `status`, `navigate`, `get-property`, `set-property`, `get-states`, `set-state`, `styles`, `resources`, `set-resource`, `list-pages`.
 
 ---
 
@@ -457,6 +521,7 @@ raka screenshot -f window.png                     # Whole window (pixel-perfect)
 raka screenshot e5 -f button.png                  # Specific element
 raka screenshot --mode capture -f perfect.png     # Force capture mode
 raka screenshot --mode render --bg "#1E1E1E" -f dark.png  # Render with background
+raka screenshot e5 --state PointerOver -f hover.png  # Capture with temporary visual state
 ```
 
 **Two screenshot modes:**

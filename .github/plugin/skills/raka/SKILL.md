@@ -250,6 +250,28 @@ raka hotkey Ctrl+A                            # Select all
 ```
 Supports modifiers: Ctrl, Alt, Shift, Win. Keys: A-Z, 0-9, F1-F12, Tab, Enter, Escape, Delete, Home, End, PageUp, PageDown, arrow keys, Space, Backspace.
 
+### `raka focus`
+Set keyboard focus on an element. Useful before `type` or `hotkey` to ensure the correct element receives input.
+```bash
+raka focus --name SearchBox                       # By x:Name (recommended)
+raka focus e5                                     # By element ID
+raka focus --type TextBox --text "Enter name"     # By type + text
+```
+
+### `raka scroll-into-view`
+Scroll an element into the visible viewport using `StartBringIntoView()`. Essential before `click` when elements are off-screen in a ScrollViewer or ListView.
+```bash
+raka scroll-into-view --name SaveButton           # By x:Name (recommended)
+raka scroll-into-view e12                         # By element ID
+raka scroll-into-view --type Button --text "Submit"  # By type + text
+```
+
+**Common pattern — click an off-screen element:**
+```bash
+raka scroll-into-view --name SaveButton           # Scroll it into view first
+raka click --name SaveButton                      # Now click it (coordinates are valid)
+```
+
 ### `raka list-pages`
 List all Page types available in the app's assemblies — useful to discover navigation targets.
 ```bash
@@ -430,7 +452,21 @@ raka invoke --name SaveButton                # Fast programmatic click — no vi
 raka hotkey Ctrl+S                           # Keyboard shortcuts
 ```
 
-### 11. Use `resources` to discover theme values before modifying
+### 11. Use `scroll-into-view` before clicking off-screen elements
+Elements in a ScrollViewer or ListView may be outside the viewport. `click` uses screen coordinates, so off-screen elements will miss:
+```bash
+raka scroll-into-view --name SaveButton     # Ensure it's visible
+raka click --name SaveButton                # Now click works reliably
+```
+
+### 12. Use `focus` before typing into a specific element
+If `type` sends keystrokes to the wrong element, explicitly focus first:
+```bash
+raka focus --name SearchBox                 # Set keyboard focus
+raka type "my search query" --name SearchBox
+```
+
+### 13. Use `resources` to discover theme values before modifying
 Before tweaking colors or spacing, browse what's available:
 ```bash
 raka resources --filter Padding              # Find all padding resources
