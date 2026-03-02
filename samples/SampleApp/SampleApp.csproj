@@ -13,6 +13,8 @@
     <WinUISDKReferences>false</WinUISDKReferences>
     <EnableMsixTooling>true</EnableMsixTooling>
     <Nullable>enable</Nullable>
+    <!-- Suppress Win32 debug API output capture when running under dotnet watch -->
+    <WinAppOutputFilter>stdout,stderr</WinAppOutputFilter>
   </PropertyGroup>
 
   <ItemGroup>
@@ -41,7 +43,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.7705" />
-    <PackageReference Include="Microsoft.Windows.SDK.BuildTools.WinApp" Version="0.2.1-nm-vsc-debug-output.106">
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools.WinApp" Version="0.2.1-nm-vsc-debug-output.107">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
