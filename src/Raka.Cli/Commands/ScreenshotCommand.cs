@@ -12,13 +12,16 @@ internal static class ScreenshotCommand
         filenameOption.Aliases.Add("--filename");
         var modeOption = new Option<string?>("--mode") { Description = "Screenshot mode: 'capture' (pixel-perfect, includes Mica/Acrylic) or 'render' (RenderTargetBitmap, works offscreen). Default: capture for window, render for element." };
         var bgOption = new Option<string?>("--bg") { Description = "Background color for render mode (e.g. '#FFFFFF'). Composites element onto solid color to fix invisible text." };
+        var stateOption = new Option<string?>("--state") { Description = "Temporarily apply visual state before capture, then revert (e.g., PointerOver, Pressed)" };
+        stateOption.Aliases.Add("-s");
 
         var command = new Command("screenshot", "Take a screenshot of the app or a specific element")
         {
             elementArg,
             filenameOption,
             modeOption,
-            bgOption
+            bgOption,
+            stateOption
         };
         CommandHelpers.AddTargetOptions(command);
 
@@ -28,8 +31,9 @@ internal static class ScreenshotCommand
             var filename = parseResult.GetValue(filenameOption);
             var mode = parseResult.GetValue(modeOption);
             var bg = parseResult.GetValue(bgOption);
+            var state = parseResult.GetValue(stateOption);
 
-            var parameters = new ScreenshotParams(element, mode, bg);
+            var parameters = new ScreenshotParams(element, mode, bg, state);
             var paramsJson = JsonSerializer.SerializeToElement(parameters, CliJsonContext.Default.ScreenshotParams);
 
             using var client = await CommandHelpers.GetConnectedClient(parseResult);

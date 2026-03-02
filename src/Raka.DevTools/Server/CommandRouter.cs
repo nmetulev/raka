@@ -51,6 +51,8 @@ internal sealed class CommandRouter
                 Commands.ListPages => HandleListPages(),
                 Commands.Type => await HandleTypeAsync(request.Params),
                 Commands.Hotkey => await HandleHotkeyAsync(request.Params),
+                Commands.GetStates => HandleGetStates(request.Params),
+                Commands.SetState => HandleSetState(request.Params),
                 Commands.Styles => HandleStyles(request.Params),
                 Commands.Resources => HandleResources(request.Params),
                 Commands.SetResource => HandleSetResource(request.Params),
@@ -413,6 +415,7 @@ internal sealed class CommandRouter
         string? elementId = null;
         string mode = "auto"; // auto, capture, render
         string? background = null;
+        string? state = null;
 
         if (parameters.HasValue)
         {
@@ -422,6 +425,36 @@ internal sealed class CommandRouter
                 mode = modeProp.GetString() ?? "auto";
             if (parameters.Value.TryGetProperty("background", out var bgProp))
                 background = bgProp.GetString();
+            if (parameters.Value.TryGetProperty("state", out var stateProp))
+                state = stateProp.GetString();
+        }
+
+        // If --state is specified, apply the visual state before capturing
+        Control? stateTarget = null;
+        string? previousState = null;
+        if (state != null && elementId != null)
+        {
+            var el = _walker.GetElement(elementId);
+            if (el is Control ctrl)
+            {
+                stateTarget = ctrl;
+                // Remember current state for revert
+                var groups = VisualStateManager.GetVisualStateGroups(ctrl);
+                foreach (var g in groups)
+                {
+                    foreach (var s in g.States)
+                    {
+                        if (s.Name == state)
+                        {
+                            previousState = g.CurrentState?.Name;
+                            break;
+                        }
+                    }
+                    if (previousState != null) break;
+                }
+                VisualStateManager.GoToState(ctrl, state, true);
+                await Task.Delay(100); // Let the state transition animate
+            }
         }
 
         // Auto mode: capture for whole window, render for specific elements
@@ -522,6 +555,17 @@ internal sealed class CommandRouter
                 Error = $"Screenshot failed (COM error 0x{ex.HResult:X8}): {ex.Message}. " +
                         "If you just injected XAML, wait a moment and retry."
             };
+        }
+
+        // Revert visual state if we applied one
+        if (stateTarget != null && previousState != null)
+        {
+            VisualStateManager.GoToState(stateTarget, previousState, true);
+        }
+        else if (stateTarget != null)
+        {
+            // No previous state recorded, go to "Normal" as safe default
+            VisualStateManager.GoToState(stateTarget, "Normal", true);
         }
 
         var base64 = Convert.ToBase64String(pngBytes);
@@ -1174,6 +1218,111 @@ internal sealed class CommandRouter
             "f9" => 0x78, "f10" => 0x79, "f11" => 0x7A, "f12" => 0x7B,
             _ => 0
         };
+    }
+
+    private RakaResponse HandleGetStates(JsonElement? parameters)
+    {
+        if (!parameters.HasValue)
+            return new RakaResponse { Success = false, Error = "Missing parameters" };
+
+        var element = ResolveElementFromParams(parameters.Value);
+        if (element == null)
+            return new RakaResponse { Success = false, Error = "Element not found" };
+
+        // GetVisualStateGroups needs the template root, not the Control itself.
+        // Try the control first, then walk into its first visual child (template root).
+        var result = new List<Dictionary<string, object?>>();
+        var targets = new List<DependencyObject> { element };
+        if (element is Control && VisualTreeHelper.GetChildrenCount(element) > 0)
+            targets.Add(VisualTreeHelper.GetChild(element, 0));
+
+        foreach (var target in targets)
+        {
+            if (target is not FrameworkElement fe) continue;
+            var groups = VisualStateManager.GetVisualStateGroups(fe);
+            foreach (var group in groups)
+            {
+                var states = new List<Dictionary<string, object?>>();
+                foreach (var state in group.States)
+                {
+                    states.Add(new Dictionary<string, object?>
+                    {
+                        ["name"] = state.Name,
+                        ["hasStoryboard"] = state.Storyboard != null
+                    });
+                }
+
+                result.Add(new Dictionary<string, object?>
+                {
+                    ["groupName"] = group.Name,
+                    ["currentState"] = group.CurrentState?.Name,
+                    ["states"] = states
+                });
+            }
+            if (result.Count > 0) break; // Found groups, don't duplicate
+        }
+
+        return new RakaResponse
+        {
+            Success = true,
+            Data = JsonSerializer.SerializeToElement(result, RakaJson.Options)
+        };
+    }
+
+    private RakaResponse HandleSetState(JsonElement? parameters)
+    {
+        if (!parameters.HasValue)
+            return new RakaResponse { Success = false, Error = "Missing parameters" };
+
+        if (!parameters.Value.TryGetProperty("state", out var stateProp) || stateProp.GetString() is not string stateName)
+            return new RakaResponse { Success = false, Error = "Missing 'state' parameter" };
+
+        var element = ResolveElementFromParams(parameters.Value);
+        if (element == null)
+            return new RakaResponse { Success = false, Error = "Element not found" };
+
+        if (element is not Control control)
+            return new RakaResponse { Success = false, Error = $"{element.GetType().Name} is not a Control — visual states require a Control" };
+
+        bool success = VisualStateManager.GoToState(control, stateName, true);
+
+        return new RakaResponse
+        {
+            Success = true,
+            Data = JsonSerializer.SerializeToElement(new Dictionary<string, object?>
+            {
+                ["action"] = "set-state",
+                ["element"] = GetElementId(element),
+                ["type"] = element.GetType().Name,
+                ["state"] = stateName,
+                ["applied"] = success
+            }, RakaJson.Options)
+        };
+    }
+
+    private DependencyObject? ResolveElementFromParams(JsonElement parameters)
+    {
+        if (parameters.TryGetProperty("element", out var elemProp) && elemProp.GetString() is string eid)
+            return _walker.GetElement(eid);
+
+        if (parameters.TryGetProperty("name", out var nameProp) && nameProp.GetString() is string xname)
+        {
+            var root = GetRoot();
+            if (root == null) return null;
+            var results = _walker.Search(root, null, xname, null, null);
+            return results.Count > 0 ? _walker.GetElement(results[0].Id) : null;
+        }
+
+        return null;
+    }
+
+    private string GetElementId(DependencyObject element)
+    {
+        // Reverse lookup through the walker's cache
+        var root = GetRoot();
+        if (root == null) return "?";
+        // Do a search-based lookup by reference
+        return _walker.GetIdForElement(element) ?? "?";
     }
 
     private async Task<RakaResponse> HandleClickAsync(JsonElement? parameters)

@@ -134,6 +134,8 @@ public static class Commands
     public const string ListPages = "list-pages";
     public const string Type = "type";
     public const string Hotkey = "hotkey";
+    public const string GetStates = "get-states";
+    public const string SetState = "set-state";
     public const string SetResource = "set-resource";
 }
 

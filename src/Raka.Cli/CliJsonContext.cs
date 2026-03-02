@@ -28,6 +28,8 @@ namespace Raka.Cli;
 [JsonSerializable(typeof(InvokeParams))]
 [JsonSerializable(typeof(TypeParams))]
 [JsonSerializable(typeof(HotkeyParams))]
+[JsonSerializable(typeof(GetStatesParams))]
+[JsonSerializable(typeof(SetStateParams))]
 [JsonSerializable(typeof(StylesParams))]
 [JsonSerializable(typeof(ResourcesParams))]
 [JsonSerializable(typeof(SetResourceParams))]
@@ -61,7 +63,7 @@ internal record SetPropertyParams(string? Element, string Property, string Value
 /// <summary>Shared param type for commands that only need an element ID (click, ancestors).</summary>
 internal record ElementParams(string Element);
 
-internal record ScreenshotParams(string? Element = null, string? Mode = null, string? Background = null);
+internal record ScreenshotParams(string? Element = null, string? Mode = null, string? Background = null, string? State = null);
 
 internal record AddXamlParams(string Parent, string Xaml, int? Index = null);
 
@@ -76,6 +78,10 @@ internal record InvokeParams(string? Element = null, string? Name = null, string
 internal record TypeParams(string Text, string? Element = null, string? Name = null, int? Delay = null);
 
 internal record HotkeyParams(string Keys);
+
+internal record GetStatesParams(string? Element = null, string? Name = null);
+
+internal record SetStateParams(string? Element = null, string? Name = null, string? State = null, string? Group = null);
 
 internal record StylesParams(string? Element = null, string? Name = null);
 

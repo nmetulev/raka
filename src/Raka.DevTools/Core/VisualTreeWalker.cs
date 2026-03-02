@@ -30,6 +30,19 @@ internal sealed class VisualTreeWalker
     }
 
     /// <summary>
+    /// Reverse lookup: gets the ID for a previously registered element.
+    /// </summary>
+    public string? GetIdForElement(DependencyObject element)
+    {
+        foreach (var kvp in _elementMap)
+        {
+            if (ReferenceEquals(kvp.Value, element))
+                return $"e{kvp.Key}";
+        }
+        return null;
+    }
+
+    /// <summary>
     /// Walks the visual tree starting from the given root, up to the specified depth.
     /// </summary>
     public ElementNode Walk(DependencyObject root, int maxDepth = int.MaxValue)
