@@ -17,6 +17,8 @@ internal static class SearchCommand
         var interactiveOption = new Option<bool>("--interactive") { Description = "Only return interactive elements (clickable, toggleable, or selectable)" };
         var visibleOption = new Option<bool>("--visible") { Description = "Only return visible elements (Visibility=Visible)" };
         var propertyOption = new Option<string?>("--property") { Description = "Filter by property value (e.g., Tag=dashboard, IsEnabled=True)" };
+        var fromPageOption = new Option<bool>("-p") { Description = "Scope to current page content (skip framework nesting)" };
+        fromPageOption.Aliases.Add("--from-page");
 
         var command = new Command("search", "Search for elements in the visual tree")
         {
@@ -27,7 +29,8 @@ internal static class SearchCommand
             classOption,
             interactiveOption,
             visibleOption,
-            propertyOption
+            propertyOption,
+            fromPageOption
         };
         CommandHelpers.AddTargetOptions(command);
 
@@ -41,6 +44,7 @@ internal static class SearchCommand
             var interactive = parseResult.GetValue(interactiveOption);
             var visibleOnly = parseResult.GetValue(visibleOption);
             var property = parseResult.GetValue(propertyOption);
+            var fromPage = parseResult.GetValue(fromPageOption);
 
             if (type == null && name == null && text == null && autoId == null && className == null && !interactive && !visibleOnly && property == null)
             {
@@ -50,7 +54,7 @@ internal static class SearchCommand
             }
 
             var p = new SearchParams(type, name, text, autoId, className,
-                interactive ? true : null, visibleOnly ? true : null, property);
+                interactive ? true : null, visibleOnly ? true : null, property, fromPage ? true : null);
             var parameters = JsonSerializer.SerializeToElement(p, CliJsonContext.Default.SearchParams);
             Environment.ExitCode = await CommandHelpers.SendAndPrint(parseResult, Raka.Protocol.Commands.Search, parameters);
         });

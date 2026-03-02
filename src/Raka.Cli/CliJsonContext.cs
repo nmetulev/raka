@@ -51,10 +51,10 @@ internal partial class CliJsonContext : JsonSerializerContext
 
 // Typed parameter records for each command — fully AOT-safe
 
-internal record InspectParams(string? Element = null, int? Depth = null);
+internal record InspectParams(string? Element = null, int? Depth = null, bool? FromPage = null);
 
 internal record SearchParams(string? Type = null, string? Name = null, string? Text = null, string? AutomationId = null,
-    string? ClassName = null, bool? Interactive = null, bool? VisibleOnly = null, string? Property = null);
+    string? ClassName = null, bool? Interactive = null, bool? VisibleOnly = null, string? Property = null, bool? FromPage = null);
 
 internal record GetPropertyParams(string Element, string? Property = null, bool? All = null);
 

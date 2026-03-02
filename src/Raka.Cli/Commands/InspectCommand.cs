@@ -11,6 +11,8 @@ internal static class InspectCommand
         elementOption.Aliases.Add("--element");
         var depthOption = new Option<int?>("-d") { Description = "Maximum depth to traverse" };
         depthOption.Aliases.Add("--depth");
+        var fromPageOption = new Option<bool>("-p") { Description = "Scope to current page content (skip framework nesting)" };
+        fromPageOption.Aliases.Add("--from-page");
         var formatOption = new Option<string?>("--format") { Description = "Output format: 'json' (default) or 'tree' (ASCII tree view)" };
         formatOption.Aliases.Add("-f");
 
@@ -18,6 +20,7 @@ internal static class InspectCommand
         {
             elementOption,
             depthOption,
+            fromPageOption,
             formatOption
         };
         CommandHelpers.AddTargetOptions(command);
@@ -26,9 +29,10 @@ internal static class InspectCommand
         {
             var element = parseResult.GetValue(elementOption);
             var depth = parseResult.GetValue(depthOption);
+            var fromPage = parseResult.GetValue(fromPageOption);
             var format = parseResult.GetValue(formatOption);
 
-            var p = new InspectParams(element, depth);
+            var p = new InspectParams(element, depth, fromPage ? true : null);
             var parameters = JsonSerializer.SerializeToElement(p, CliJsonContext.Default.InspectParams);
 
             if (string.Equals(format, "tree", StringComparison.OrdinalIgnoreCase))

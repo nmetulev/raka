@@ -96,6 +96,7 @@ internal sealed class CommandRouter
 
         string? elementId = null;
         int depth = int.MaxValue;
+        bool fromPage = false;
 
         if (parameters.HasValue)
         {
@@ -103,6 +104,8 @@ internal sealed class CommandRouter
                 elementId = elemProp.GetString();
             if (parameters.Value.TryGetProperty("depth", out var depthProp))
                 depth = depthProp.GetInt32();
+            if (parameters.Value.TryGetProperty("fromPage", out var fpProp))
+                fromPage = fpProp.GetBoolean();
         }
 
         DependencyObject target;
@@ -110,6 +113,11 @@ internal sealed class CommandRouter
         {
             target = _walker.GetElement(elementId)
                 ?? throw new ArgumentException($"Element '{elementId}' not found. Run 'inspect' first to populate element IDs.");
+        }
+        else if (fromPage)
+        {
+            target = GetPageContent(root)
+                ?? throw new InvalidOperationException("No Page found. Is a page navigated in a Frame?");
         }
         else
         {
@@ -134,7 +142,7 @@ internal sealed class CommandRouter
             return new RakaResponse { Success = false, Error = "No window content available" };
 
         string? type = null, name = null, text = null, automationId = null, className = null, property = null;
-        bool interactive = false, visibleOnly = false;
+        bool interactive = false, visibleOnly = false, fromPage = false;
 
         if (parameters.HasValue)
         {
@@ -154,13 +162,16 @@ internal sealed class CommandRouter
                 visibleOnly = visProp.GetBoolean();
             if (parameters.Value.TryGetProperty("property", out var propProp))
                 property = propProp.GetString();
+            if (parameters.Value.TryGetProperty("fromPage", out var fpProp))
+                fromPage = fpProp.GetBoolean();
         }
 
         if (type == null && name == null && text == null && automationId == null &&
             className == null && !interactive && !visibleOnly && property == null)
             return new RakaResponse { Success = false, Error = "Specify at least one search criterion: type, name, text, automationId, className, interactive, visibleOnly, or property" };
 
-        var results = _walker.Search(root, type, name, text, automationId, className, interactive, visibleOnly, property);
+        var searchRoot = fromPage ? (GetPageContent(root) ?? root) : root;
+        var results = _walker.Search(searchRoot, type, name, text, automationId, className, interactive, visibleOnly, property);
 
         return new RakaResponse
         {
@@ -1429,6 +1440,16 @@ internal sealed class CommandRouter
             if (result != null) return result;
         }
         return null;
+    }
+
+    /// <summary>
+    /// Gets the current Page content from the first Frame found in the tree.
+    /// Returns the Page itself as the scoping root, skipping all framework nesting.
+    /// </summary>
+    private static DependencyObject? GetPageContent(DependencyObject root)
+    {
+        var frame = FindFrame(root);
+        return frame?.Content as DependencyObject;
     }
 
     private static T? FindDescendant<T>(DependencyObject obj) where T : DependencyObject
