@@ -30,6 +30,8 @@ namespace Raka.Cli;
 [JsonSerializable(typeof(HotkeyParams))]
 [JsonSerializable(typeof(GetStatesParams))]
 [JsonSerializable(typeof(SetStateParams))]
+[JsonSerializable(typeof(FocusParams))]
+[JsonSerializable(typeof(ScrollIntoViewParams))]
 [JsonSerializable(typeof(StylesParams))]
 [JsonSerializable(typeof(ResourcesParams))]
 [JsonSerializable(typeof(SetResourceParams))]
@@ -82,6 +84,10 @@ internal record HotkeyParams(string Keys);
 internal record GetStatesParams(string? Element = null, string? Name = null);
 
 internal record SetStateParams(string? Element = null, string? Name = null, string? State = null, string? Group = null);
+
+internal record FocusParams(string? Element = null, string? Name = null);
+
+internal record ScrollIntoViewParams(string? Element = null, string? Name = null, string? Type = null, string? Text = null);
 
 internal record StylesParams(string? Element = null, string? Name = null);
 

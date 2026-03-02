@@ -136,6 +136,8 @@ public static class Commands
     public const string Hotkey = "hotkey";
     public const string GetStates = "get-states";
     public const string SetState = "set-state";
+    public const string Focus = "focus";
+    public const string ScrollIntoView = "scroll-into-view";
     public const string SetResource = "set-resource";
 }
 

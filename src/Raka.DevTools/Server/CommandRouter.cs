@@ -53,6 +53,8 @@ internal sealed class CommandRouter
                 Commands.Hotkey => await HandleHotkeyAsync(request.Params),
                 Commands.GetStates => HandleGetStates(request.Params),
                 Commands.SetState => HandleSetState(request.Params),
+                Commands.Focus => HandleFocus(request.Params),
+                Commands.ScrollIntoView => HandleScrollIntoView(request.Params),
                 Commands.Styles => HandleStyles(request.Params),
                 Commands.Resources => HandleResources(request.Params),
                 Commands.SetResource => HandleSetResource(request.Params),
@@ -1331,6 +1333,91 @@ internal sealed class CommandRouter
                 ["type"] = element.GetType().Name,
                 ["state"] = stateName,
                 ["applied"] = success
+            }, RakaJson.Options)
+        };
+    }
+
+    private RakaResponse HandleFocus(JsonElement? parameters)
+    {
+        if (!parameters.HasValue)
+            return new RakaResponse { Success = false, Error = "Missing parameters" };
+
+        var element = ResolveElementFromParams(parameters.Value);
+        if (element == null)
+            return new RakaResponse { Success = false, Error = "Element not found" };
+
+        if (element is not UIElement uiElement)
+            return new RakaResponse { Success = false, Error = $"{element.GetType().Name} is not a UIElement — cannot focus" };
+
+        bool focused;
+        if (uiElement is Control ctrl)
+            focused = ctrl.Focus(FocusState.Programmatic);
+        else
+            focused = uiElement.Focus(FocusState.Programmatic);
+
+        return new RakaResponse
+        {
+            Success = true,
+            Data = JsonSerializer.SerializeToElement(new Dictionary<string, object?>
+            {
+                ["action"] = "focus",
+                ["element"] = _walker.GetIdForElement(element) ?? "?",
+                ["type"] = element.GetType().Name,
+                ["focused"] = focused
+            }, RakaJson.Options)
+        };
+    }
+
+    private RakaResponse HandleScrollIntoView(JsonElement? parameters)
+    {
+        if (!parameters.HasValue)
+            return new RakaResponse { Success = false, Error = "Missing parameters" };
+
+        // Resolve element — supports element ID, --name, --type+--text
+        DependencyObject? element = null;
+        string elementId = "";
+
+        if (parameters.Value.TryGetProperty("element", out var elemProp) && elemProp.GetString() is string eid)
+        {
+            elementId = eid;
+            element = _walker.GetElement(elementId);
+        }
+        else if (parameters.Value.TryGetProperty("name", out var nameProp) && nameProp.GetString() is string xname)
+        {
+            var root = GetRoot();
+            if (root == null) return new RakaResponse { Success = false, Error = "No window content available" };
+            var results = _walker.Search(root, null, xname, null, null);
+            if (results.Count == 0) return new RakaResponse { Success = false, Error = $"No element found with name '{xname}'" };
+            elementId = results[0].Id;
+            element = _walker.GetElement(elementId);
+        }
+        else if (parameters.Value.TryGetProperty("type", out var typeProp) && typeProp.GetString() is string tname)
+        {
+            var root = GetRoot();
+            if (root == null) return new RakaResponse { Success = false, Error = "No window content available" };
+            string? text = parameters.Value.TryGetProperty("text", out var txp) ? txp.GetString() : null;
+            var results = _walker.Search(root, tname, null, text, null);
+            if (results.Count == 0) return new RakaResponse { Success = false, Error = $"No element found matching type '{tname}'" + (text != null ? $" with text '{text}'" : "") };
+            elementId = results[0].Id;
+            element = _walker.GetElement(elementId);
+        }
+
+        if (element == null)
+            return new RakaResponse { Success = false, Error = "Element not found. Specify element ID, --name, or --type." };
+
+        if (element is not UIElement uiElement)
+            return new RakaResponse { Success = false, Error = $"{element.GetType().Name} is not a UIElement — cannot scroll into view" };
+
+        uiElement.StartBringIntoView();
+
+        return new RakaResponse
+        {
+            Success = true,
+            Data = JsonSerializer.SerializeToElement(new Dictionary<string, object?>
+            {
+                ["action"] = "scroll-into-view",
+                ["element"] = elementId,
+                ["type"] = element.GetType().Name
             }, RakaJson.Options)
         };
     }
