@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="TestApp.VisualStatesPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <ScrollViewer Padding="24">
+        <StackPanel Spacing="24" MaxWidth="600">
+            <TextBlock Text="Visual State Tests" Style="{StaticResource TitleTextBlockStyle}" />
+
+            <!-- Button with built-in visual states -->
+            <StackPanel Spacing="8">
+                <TextBlock Text="Button (has PointerOver, Pressed states)" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                <Button x:Name="StateButton" Content="Hover or Press Me" Width="200" Height="40" />
+                <TextBlock Text="Use 'raka set-state' to trigger PointerOver or Pressed" Foreground="{ThemeResource SystemFillColorNeutralBrush}" />
+            </StackPanel>
+
+            <!-- Toggle Controls -->
+            <StackPanel Spacing="8">
+                <TextBlock Text="Toggle Controls" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                <CheckBox x:Name="TestCheckBox" Content="Check me" />
+                <RadioButton x:Name="RadioA" Content="Option A" GroupName="TestGroup" IsChecked="True" />
+                <RadioButton x:Name="RadioB" Content="Option B" GroupName="TestGroup" />
+                <RadioButton x:Name="RadioC" Content="Option C" GroupName="TestGroup" />
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

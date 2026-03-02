@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="TestApp.InputTestPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <ScrollViewer Padding="24">
+        <StackPanel Spacing="24" MaxWidth="600">
+            <TextBlock Text="Input Simulation Tests" Style="{StaticResource TitleTextBlockStyle}" />
+
+            <!-- AutoSuggestBox: type command should trigger dropdown -->
+            <StackPanel Spacing="8">
+                <TextBlock Text="AutoSuggestBox (type should show dropdown)" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                <AutoSuggestBox x:Name="SearchBox" PlaceholderText="Type to search..."
+                                TextChanged="SearchBox_TextChanged"
+                                SuggestionChosen="SearchBox_SuggestionChosen" />
+                <TextBlock x:Name="SearchStatus" Text="Status: waiting for input" Foreground="{ThemeResource SystemFillColorNeutralBrush}" />
+            </StackPanel>
+
+            <!-- TextBox: type command should fire TextChanged -->
+            <StackPanel Spacing="8">
+                <TextBlock Text="TextBox (type should fire TextChanged)" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                <TextBox x:Name="InputBox" PlaceholderText="Type something..."
+                         TextChanged="InputBox_TextChanged" />
+                <TextBlock x:Name="InputStatus" Text="TextChanged count: 0" Foreground="{ThemeResource SystemFillColorNeutralBrush}" />
+            </StackPanel>
+
+            <!-- Button: invoke should trigger Click -->
+            <StackPanel Spacing="8">
+                <TextBlock Text="Button (invoke should trigger Click)" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                <Button x:Name="TestButton" Content="Click Me" Click="TestButton_Click" />
+                <TextBlock x:Name="ButtonStatus" Text="Click count: 0" Foreground="{ThemeResource SystemFillColorNeutralBrush}" />
+            </StackPanel>
+
+            <!-- ToggleSwitch: invoke should toggle -->
+            <StackPanel Spacing="8">
+                <TextBlock Text="ToggleSwitch (invoke should toggle)" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                <ToggleSwitch x:Name="TestToggle" Header="Enable feature" Toggled="TestToggle_Toggled" />
+                <TextBlock x:Name="ToggleStatus" Text="Toggle state: Off" Foreground="{ThemeResource SystemFillColorNeutralBrush}" />
+            </StackPanel>
+
+            <!-- Hotkey test area -->
+            <StackPanel Spacing="8">
+                <TextBlock Text="Hotkey Test (Ctrl+S to save)" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                <TextBox x:Name="HotkeyBox" PlaceholderText="Focus here and press Ctrl+S..."
+                         KeyDown="HotkeyBox_KeyDown" />
+                <TextBlock x:Name="HotkeyStatus" Text="Last hotkey: none" Foreground="{ThemeResource SystemFillColorNeutralBrush}" />
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

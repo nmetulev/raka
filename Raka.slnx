@@ -8,6 +8,11 @@
       <Platform Solution="Release|*" Project="x86" />
       <Deploy Solution="Debug|*" />
     </Project>
+    <Project Path="samples/TestApp/TestApp.csproj">
+      <Platform Solution="Debug|*" Project="ARM64" />
+      <Platform Solution="Release|*" Project="x86" />
+      <Deploy Solution="Debug|*" />
+    </Project>
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/Raka.Cli/Raka.Cli.csproj">
