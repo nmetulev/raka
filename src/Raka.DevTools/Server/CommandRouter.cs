@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices.WindowsRuntime;
+using System.Linq;
 using System.Text.Json;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation.Peers;
@@ -49,6 +50,7 @@ internal sealed class CommandRouter
                 Commands.Navigate => HandleNavigate(request.Params),
                 Commands.ListPages => HandleListPages(),
                 Commands.Type => await HandleTypeAsync(request.Params),
+                Commands.Hotkey => await HandleHotkeyAsync(request.Params),
                 Commands.Styles => HandleStyles(request.Params),
                 Commands.Resources => HandleResources(request.Params),
                 Commands.SetResource => HandleSetResource(request.Params),
@@ -1059,6 +1061,118 @@ internal sealed class CommandRouter
                 ["text"] = text,
                 ["method"] = "sendInput"
             }, RakaJson.Options)
+        };
+    }
+
+    private async Task<RakaResponse> HandleHotkeyAsync(JsonElement? parameters)
+    {
+        if (!parameters.HasValue)
+            return new RakaResponse { Success = false, Error = "Missing parameters" };
+
+        if (!parameters.Value.TryGetProperty("keys", out var keysProp) || keysProp.GetString() is not string keys)
+            return new RakaResponse { Success = false, Error = "Missing 'keys' parameter" };
+
+        // Parse key combination: "Ctrl+S", "Alt+F4", "Shift+Tab", "Tab", "Enter"
+        var parts = keys.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0)
+            return new RakaResponse { Success = false, Error = "Empty key combination" };
+
+        var modifiers = new List<ushort>();
+        ushort mainKey = 0;
+
+        for (int i = 0; i < parts.Length; i++)
+        {
+            var part = parts[i];
+            bool isLast = i == parts.Length - 1;
+
+            if (!isLast || IsModifier(part))
+            {
+                ushort mod = ParseModifier(part);
+                if (mod == 0)
+                    return new RakaResponse { Success = false, Error = $"Unknown modifier: '{part}'. Use Ctrl, Alt, Shift, or Win." };
+                modifiers.Add(mod);
+            }
+            else
+            {
+                mainKey = ParseKey(part);
+                if (mainKey == 0)
+                    return new RakaResponse { Success = false, Error = $"Unknown key: '{part}'. Use key names like Tab, Enter, Escape, F1-F12, or single characters." };
+            }
+        }
+
+        if (mainKey == 0 && modifiers.Count > 0)
+        {
+            // Lone modifier press (e.g., just "Alt") — treat last modifier as main key
+            mainKey = modifiers[^1];
+            modifiers.RemoveAt(modifiers.Count - 1);
+        }
+
+        await Task.Run(() => InputSimulator.SendHotkey(modifiers.ToArray(), mainKey));
+        await Task.Delay(50);
+
+        return new RakaResponse
+        {
+            Success = true,
+            Data = JsonSerializer.SerializeToElement(new Dictionary<string, object?>
+            {
+                ["action"] = "hotkey",
+                ["keys"] = keys,
+                ["modifiers"] = modifiers.Select(m => $"0x{m:X2}").ToArray(),
+                ["mainKey"] = $"0x{mainKey:X2}",
+                ["method"] = "sendInput"
+            }, RakaJson.Options)
+        };
+    }
+
+    private static bool IsModifier(string key) =>
+        key.Equals("Ctrl", StringComparison.OrdinalIgnoreCase) ||
+        key.Equals("Control", StringComparison.OrdinalIgnoreCase) ||
+        key.Equals("Alt", StringComparison.OrdinalIgnoreCase) ||
+        key.Equals("Shift", StringComparison.OrdinalIgnoreCase) ||
+        key.Equals("Win", StringComparison.OrdinalIgnoreCase) ||
+        key.Equals("Windows", StringComparison.OrdinalIgnoreCase);
+
+    private static ushort ParseModifier(string key) => key.ToLowerInvariant() switch
+    {
+        "ctrl" or "control" => 0x11, // VK_CONTROL
+        "alt" => 0x12,               // VK_MENU
+        "shift" => 0x10,             // VK_SHIFT
+        "win" or "windows" => 0x5B,  // VK_LWIN
+        _ => 0
+    };
+
+    private static ushort ParseKey(string key)
+    {
+        // Single character
+        if (key.Length == 1)
+        {
+            char c = char.ToUpperInvariant(key[0]);
+            if (c is >= 'A' and <= 'Z') return (ushort)c;
+            if (c is >= '0' and <= '9') return (ushort)c;
+            return 0;
+        }
+
+        return key.ToLowerInvariant() switch
+        {
+            "tab" => 0x09,
+            "enter" or "return" => 0x0D,
+            "escape" or "esc" => 0x1B,
+            "space" => 0x20,
+            "backspace" or "back" => 0x08,
+            "delete" or "del" => 0x2E,
+            "insert" or "ins" => 0x2D,
+            "home" => 0x24,
+            "end" => 0x23,
+            "pageup" or "pgup" => 0x21,
+            "pagedown" or "pgdn" => 0x22,
+            "up" => 0x26,
+            "down" => 0x28,
+            "left" => 0x25,
+            "right" => 0x27,
+            "f1" => 0x70, "f2" => 0x71, "f3" => 0x72, "f4" => 0x73,
+            "f5" => 0x74, "f6" => 0x75, "f7" => 0x76, "f8" => 0x77,
+            "f9" => 0x78, "f10" => 0x79, "f11" => 0x7A, "f12" => 0x7B,
+            _ => 0
         };
     }
 

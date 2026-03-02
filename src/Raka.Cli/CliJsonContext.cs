@@ -27,6 +27,7 @@ namespace Raka.Cli;
 [JsonSerializable(typeof(ClickParams))]
 [JsonSerializable(typeof(InvokeParams))]
 [JsonSerializable(typeof(TypeParams))]
+[JsonSerializable(typeof(HotkeyParams))]
 [JsonSerializable(typeof(StylesParams))]
 [JsonSerializable(typeof(ResourcesParams))]
 [JsonSerializable(typeof(SetResourceParams))]
@@ -73,6 +74,8 @@ internal record ClickParams(string? Element = null, string? Name = null, string?
 internal record InvokeParams(string? Element = null, string? Name = null, string? Type = null, string? Text = null);
 
 internal record TypeParams(string Text, string? Element = null, string? Name = null, int? Delay = null);
+
+internal record HotkeyParams(string Keys);
 
 internal record StylesParams(string? Element = null, string? Name = null);
 
