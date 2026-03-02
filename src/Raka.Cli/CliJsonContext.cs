@@ -69,7 +69,7 @@ internal record AddXamlParams(string Parent, string Xaml, int? Index = null);
 
 internal record ReplaceXamlParams(string Element, string Xaml);
 
-internal record NavigateParams(string Page);
+internal record NavigateParams(string Page, string? Param = null);
 
 internal record ClickParams(string? Element = null, string? Name = null, string? Type = null, string? Text = null);
 

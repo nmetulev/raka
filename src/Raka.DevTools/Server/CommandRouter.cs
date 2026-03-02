@@ -62,11 +62,32 @@ internal sealed class CommandRouter
         catch (Exception ex)
         {
             var inner = ex.InnerException ?? ex;
-            var frame = inner.StackTrace?.Split('\n').FirstOrDefault(l => !l.Contains("CommandRouter"))?.Trim();
+            var errorType = inner switch
+            {
+                ArgumentException => "element_not_found",
+                InvalidOperationException => "invalid_state",
+                NullReferenceException => "null_reference",
+                InvalidCastException => "type_mismatch",
+                System.Runtime.InteropServices.COMException => "com_error",
+                _ => "internal_error"
+            };
+            var stackLines = inner.StackTrace?.Split('\n')
+                .Where(l => !string.IsNullOrWhiteSpace(l))
+                .Select(l => l.Trim())
+                .Take(3)
+                .ToArray() ?? [];
+
             return new RakaResponse 
             { 
                 Success = false, 
-                Error = $"{inner.GetType().Name}: {inner.Message}" + (frame != null ? $"\n  at {frame}" : "")
+                Error = $"{inner.GetType().Name}: {inner.Message}",
+                Data = JsonSerializer.SerializeToElement(new Dictionary<string, object?>
+                {
+                    ["errorType"] = errorType,
+                    ["exceptionType"] = inner.GetType().Name,
+                    ["command"] = request.Command,
+                    ["stackTrace"] = stackLines
+                }, RakaJson.Options)
             };
         }
     }
@@ -929,6 +950,9 @@ internal sealed class CommandRouter
             return new RakaResponse { Success = false, Error = "Missing 'page' parameter" };
 
         var pageName = pageProp.GetString()!;
+        string? navParam = null;
+        if (parameters.Value.TryGetProperty("param", out var paramProp))
+            navParam = paramProp.GetString();
 
         var root = GetRoot();
         if (root == null)
@@ -965,7 +989,7 @@ internal sealed class CommandRouter
 
         try
         {
-            frame.Navigate(pageType);
+            frame.Navigate(pageType, navParam);
         }
         catch (Exception ex)
         {
