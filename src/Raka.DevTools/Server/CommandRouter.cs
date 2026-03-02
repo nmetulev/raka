@@ -39,7 +39,8 @@ internal sealed class CommandRouter
                 Commands.GetProperty => HandleGetProperty(request.Params),
                 Commands.SetProperty => HandleSetProperty(request.Params),
                 Commands.Ancestors => HandleAncestors(request.Params),
-                Commands.Click => HandleClick(request.Params),
+                Commands.Invoke => HandleInvoke(request.Params),
+                Commands.Click => await HandleClickAsync(request.Params),
                 Commands.Screenshot => await HandleScreenshotAsync(request.Params),
                 Commands.AddXaml => HandleAddXaml(request.Params),
                 Commands.RemoveElement => HandleRemove(request.Params),
@@ -47,7 +48,7 @@ internal sealed class CommandRouter
                 Commands.Status => HandleStatus(),
                 Commands.Navigate => HandleNavigate(request.Params),
                 Commands.ListPages => HandleListPages(),
-                Commands.Type => HandleType(request.Params),
+                Commands.Type => await HandleTypeAsync(request.Params),
                 Commands.Styles => HandleStyles(request.Params),
                 Commands.Resources => HandleResources(request.Params),
                 Commands.SetResource => HandleSetResource(request.Params),
@@ -270,7 +271,7 @@ internal sealed class CommandRouter
         };
     }
 
-    private RakaResponse HandleClick(JsonElement? parameters)
+    private RakaResponse HandleInvoke(JsonElement? parameters)
     {
         if (!parameters.HasValue)
             return new RakaResponse { Success = false, Error = "Missing parameters" };
@@ -990,7 +991,7 @@ internal sealed class CommandRouter
         };
     }
 
-    private RakaResponse HandleType(JsonElement? parameters)
+    private async Task<RakaResponse> HandleTypeAsync(JsonElement? parameters)
     {
         if (!parameters.HasValue)
             return new RakaResponse { Success = false, Error = "Missing parameters" };
@@ -1025,46 +1026,134 @@ internal sealed class CommandRouter
             return new RakaResponse { Success = false, Error = "Missing 'element' or 'name' parameter" };
         }
 
-        // Try IValueProvider (TextBox, PasswordBox, RichEditBox, AutoSuggestBox, etc.)
-        if (element is UIElement uiElement)
+        if (element is not UIElement uiElement)
+            return new RakaResponse { Success = false, Error = $"{element.GetType().Name} is not a UIElement — cannot focus for typing" };
+
+        // Focus the element on the UI thread
+        if (uiElement is Control ctrl)
+            ctrl.Focus(FocusState.Programmatic);
+        else
+            uiElement.Focus(FocusState.Programmatic);
+
+        // Small delay to let focus take effect
+        await Task.Delay(50);
+
+        // Send real keystrokes from background thread — yields UI thread so it can process the WM_CHAR messages
+        int delay = 30;
+        if (parameters.Value.TryGetProperty("delay", out var delayProp) && delayProp.TryGetInt32(out int d))
+            delay = d;
+
+        await Task.Run(() => InputSimulator.SendKeysAsync(text, delay));
+
+        // Wait for the last keystroke to be processed
+        await Task.Delay(50);
+
+        return new RakaResponse
         {
-            var peer = FrameworkElementAutomationPeer.CreatePeerForElement(uiElement);
-            if (peer?.GetPattern(PatternInterface.Value) is IValueProvider valueProvider)
+            Success = true,
+            Data = JsonSerializer.SerializeToElement(new Dictionary<string, object?>
             {
-                valueProvider.SetValue(text);
-                return new RakaResponse
-                {
-                    Success = true,
-                    Data = JsonSerializer.SerializeToElement(new Dictionary<string, object?>
-                    {
-                        ["action"] = "type",
-                        ["element"] = elementId,
-                        ["type"] = element.GetType().Name,
-                        ["text"] = text
-                    }, RakaJson.Options)
-                };
-            }
+                ["action"] = "type",
+                ["element"] = elementId,
+                ["type"] = element.GetType().Name,
+                ["text"] = text,
+                ["method"] = "sendInput"
+            }, RakaJson.Options)
+        };
+    }
+
+    private async Task<RakaResponse> HandleClickAsync(JsonElement? parameters)
+    {
+        if (!parameters.HasValue)
+            return new RakaResponse { Success = false, Error = "Missing parameters" };
+
+        DependencyObject? element = null;
+        string elementId = "";
+
+        // Resolve element (same logic as invoke)
+        if (parameters.Value.TryGetProperty("element", out var elemProp) && elemProp.GetString() is string eid)
+        {
+            elementId = eid;
+            element = _walker.GetElement(elementId)
+                ?? throw new ArgumentException($"Element '{elementId}' not found. Run 'inspect' first.");
+        }
+        else if (parameters.Value.TryGetProperty("name", out var nameProp) && nameProp.GetString() is string xname)
+        {
+            var root = GetRoot();
+            if (root == null) return new RakaResponse { Success = false, Error = "No window content available" };
+
+            string? type = parameters.Value.TryGetProperty("type", out var tp) ? tp.GetString() : null;
+            var results = _walker.Search(root, type, xname, null, null);
+            if (results.Count == 0)
+                return new RakaResponse { Success = false, Error = $"No element found with name '{xname}'" };
+            elementId = results[0].Id;
+            element = _walker.GetElement(elementId)!;
+        }
+        else if (parameters.Value.TryGetProperty("type", out var typeProp) && typeProp.GetString() is string tname)
+        {
+            var root = GetRoot();
+            if (root == null) return new RakaResponse { Success = false, Error = "No window content available" };
+
+            string? text = parameters.Value.TryGetProperty("text", out var txp) ? txp.GetString() : null;
+            var results = _walker.Search(root, tname, null, text, null);
+            if (results.Count == 0)
+                return new RakaResponse { Success = false, Error = $"No element found matching type '{tname}'" + (text != null ? $" with text '{text}'" : "") };
+            elementId = results[0].Id;
+            element = _walker.GetElement(elementId)!;
+        }
+        else
+        {
+            return new RakaResponse { Success = false, Error = "Missing 'element', 'name', or 'type' parameter" };
         }
 
-        // Fallback: try setting Text property directly
-        var textPropInfo = element.GetType().GetProperty("Text");
-        if (textPropInfo != null && textPropInfo.CanWrite)
-        {
-            textPropInfo.SetValue(element, text);
-            return new RakaResponse
-            {
-                Success = true,
-                Data = JsonSerializer.SerializeToElement(new Dictionary<string, object?>
-                {
-                    ["action"] = "set-text",
-                    ["element"] = elementId,
-                    ["type"] = element.GetType().Name,
-                    ["text"] = text
-                }, RakaJson.Options)
-            };
-        }
+        if (element is not FrameworkElement fe)
+            return new RakaResponse { Success = false, Error = $"Element {elementId} ({element.GetType().Name}) is not a FrameworkElement — cannot determine bounds for click" };
 
-        return new RakaResponse { Success = false, Error = $"{element.GetType().Name} does not support text input (no IValueProvider or Text property)" };
+        // Get the element's screen coordinates
+        var transform = fe.TransformToVisual(null);
+        var point = transform.TransformPoint(new Windows.Foundation.Point(0, 0));
+        var bounds = new Windows.Foundation.Rect(point, new Windows.Foundation.Size(fe.ActualWidth, fe.ActualHeight));
+
+        // Get window position to convert to screen coordinates
+        if (_window == null)
+            return new RakaResponse { Success = false, Error = "No window available" };
+
+        var appWindow = _window.AppWindow;
+        var windowPos = appWindow.Position;
+        double scale = GetScaleFactor();
+
+        int screenX = (int)(windowPos.X + bounds.X * scale + bounds.Width * scale / 2);
+        int screenY = (int)(windowPos.Y + bounds.Y * scale + bounds.Height * scale / 2);
+
+        // Send real mouse click from background thread
+        await Task.Run(() => InputSimulator.SendClick(screenX, screenY));
+
+        // Wait for click to be processed
+        await Task.Delay(100);
+
+        return new RakaResponse
+        {
+            Success = true,
+            Data = JsonSerializer.SerializeToElement(new Dictionary<string, object?>
+            {
+                ["action"] = "click",
+                ["element"] = elementId,
+                ["type"] = element.GetType().Name,
+                ["screenX"] = screenX,
+                ["screenY"] = screenY,
+                ["method"] = "sendInput"
+            }, RakaJson.Options)
+        };
+    }
+
+    private double GetScaleFactor()
+    {
+        if (_window?.Content is FrameworkElement fe)
+        {
+            var xScale = fe.XamlRoot?.RasterizationScale ?? 1.0;
+            return xScale;
+        }
+        return 1.0;
     }
 
     private static Microsoft.UI.Xaml.Controls.Frame? FindFrame(DependencyObject obj)

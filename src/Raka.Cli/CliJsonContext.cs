@@ -25,6 +25,7 @@ namespace Raka.Cli;
 [JsonSerializable(typeof(ReplaceXamlParams))]
 [JsonSerializable(typeof(NavigateParams))]
 [JsonSerializable(typeof(ClickParams))]
+[JsonSerializable(typeof(InvokeParams))]
 [JsonSerializable(typeof(TypeParams))]
 [JsonSerializable(typeof(StylesParams))]
 [JsonSerializable(typeof(ResourcesParams))]
@@ -69,7 +70,9 @@ internal record NavigateParams(string Page);
 
 internal record ClickParams(string? Element = null, string? Name = null, string? Type = null, string? Text = null);
 
-internal record TypeParams(string Text, string? Element = null, string? Name = null);
+internal record InvokeParams(string? Element = null, string? Name = null, string? Type = null, string? Text = null);
+
+internal record TypeParams(string Text, string? Element = null, string? Name = null, int? Delay = null);
 
 internal record StylesParams(string? Element = null, string? Name = null);
 

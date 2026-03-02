@@ -12,12 +12,15 @@ internal static class TypeCommand
         elementOption.Aliases.Add("-e");
         var nameOption = new Option<string?>("--name") { Description = "Target element by x:Name" };
         nameOption.Aliases.Add("-n");
+        var delayOption = new Option<int?>("--delay") { Description = "Inter-key delay in ms (default: 30)" };
+        delayOption.Aliases.Add("-d");
 
-        var command = new Command("type", "Type text into a TextBox or other text input element")
+        var command = new Command("type", "Type text via real keystroke simulation (triggers TextChanged, dropdown suggestions, etc.)")
         {
             textArg,
             elementOption,
-            nameOption
+            nameOption,
+            delayOption
         };
         CommandHelpers.AddTargetOptions(command);
 
@@ -26,6 +29,7 @@ internal static class TypeCommand
             var text = parseResult.GetValue(textArg);
             var element = parseResult.GetValue(elementOption);
             var name = parseResult.GetValue(nameOption);
+            var delay = parseResult.GetValue(delayOption);
 
             if (element == null && name == null)
             {
@@ -34,7 +38,7 @@ internal static class TypeCommand
                 return;
             }
 
-            var p = new TypeParams(text!, element, name);
+            var p = new TypeParams(text!, element, name, delay);
             var parameters = JsonSerializer.SerializeToElement(p, CliJsonContext.Default.TypeParams);
             Environment.ExitCode = await CommandHelpers.SendAndPrint(parseResult, Raka.Protocol.Commands.Type, parameters);
         });
