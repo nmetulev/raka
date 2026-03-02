@@ -52,7 +52,7 @@ The three most important commands form the agent's main loop:
 
 ```
 1. raka status                          # What page/theme/state am I on?
-2. raka click --name MyButton           # Interact with controls (by x:Name)
+2. raka invoke --name MyButton          # Interact with controls (fast, programmatic)
 3. raka screenshot -f screenshot.png    # Verify the result visually
 ```
 
@@ -61,9 +61,10 @@ Expanded workflow when building or exploring:
 ```
 1. raka status                          # Situational awareness
 2. raka screenshot -f before.png        # See current state
-3. raka click --name SaveButton         # Interact (x:Name is most reliable)
+3. raka click --name SaveButton         # Real mouse click (visual feedback)
 4. raka navigate SettingsPage           # Switch pages (more reliable than clicking nav items)
-5. raka screenshot -f after.png         # Verify the change
+5. raka inspect -d 3 --from-page        # See page content (skip framework nesting)
+6. raka screenshot -f after.png         # Verify the change
 ```
 
 For **XAML iteration** (adjusting layout, colors, text) — use hot-reload instead of rebuilding:
@@ -99,7 +100,10 @@ View the visual tree structure.
 raka inspect -d 3                     # JSON, depth-limited
 raka inspect -d 4 --format tree       # ASCII tree (human-readable)
 raka inspect -e e5 -d 2               # Subtree from element e5
+raka inspect -d 3 --from-page         # ⭐ Scope to current Page (skip framework nesting)
 ```
+
+The `--from-page` / `-p` flag is highly recommended — it scopes inspection to the current Page content, skipping 10+ levels of NavigationView/Frame framework elements.
 
 The `--format tree` output looks like:
 ```
@@ -122,6 +126,7 @@ raka search --property Tag=settings                # By property value
 raka search --class NavigationViewItem             # By full class name
 raka search --visible -t TextBlock                 # Only visible elements
 raka search --automation-id save-btn               # By AutomationId
+raka search -t Button --from-page                  # ⭐ Scope to current Page only
 ```
 
 **Tip:** Always use `--interactive` when searching for elements you plan to click — it filters out structural elements (ContentPresenter, TextBlock) and returns only actionable controls.
@@ -129,13 +134,29 @@ raka search --automation-id save-btn               # By AutomationId
 > **Note:** Text set via `{x:Bind}` compiled bindings is NOT visible to `search --text`. This is a WinUI 3 limitation — compiled bindings bypass the automation/accessibility layer. Use `{Binding}` for text you need to search for, or search by `--name` or `--type` instead.
 
 ### `raka click`
-Interact with controls. Supports buttons, checkboxes, toggles, radio buttons, navigation items.
+Perform a **real OS mouse click** at the element's screen coordinates via Win32 SendInput. Triggers the full visual event pipeline — buttons show press animation, ListView items receive ItemClick events.
 ```bash
 raka click --name SaveButton                           # ⭐ Best method — by x:Name (stable, reliable)
 raka click --type NavigationViewItem --text "Settings"  # By type + text (search + click in one)
 raka click -t Button --text "Submit"                    # Short form
 raka click e5                                          # By element ID (fragile — IDs change after navigation)
 ```
+
+### `raka invoke`
+**Programmatic** element activation via UI Automation (IInvokeProvider, IToggleProvider). Instant, no visual feedback — use for fast automation when you don't need real click behavior.
+```bash
+raka invoke --name SaveButton                          # Programmatic click (fast, no visual feedback)
+raka invoke --type ToggleSwitch --name AutoSave        # Toggle a switch
+raka invoke e5                                         # By element ID
+```
+
+**When to use `click` vs `invoke`:**
+| Scenario | Use |
+|----------|-----|
+| Testing real user interactions (visual feedback matters) | `click` |
+| ListView with `IsItemClickEnabled=True` | `click` (invoke may fail) |
+| Fast automation / batch operations | `invoke` |
+| Background/non-foreground window | `invoke` (SendInput requires foreground) |
 
 **Always prefer `--name` over element IDs.** Element IDs change when the visual tree changes (e.g., page navigation). `x:Name` is stable. When writing XAML, give interactive elements meaningful `x:Name` values.
 
@@ -144,8 +165,9 @@ Text search works on composite content too — a Button containing `StackPanel {
 ### `raka navigate`
 Navigate a Frame to a page directly — **more reliable than clicking navigation items**.
 ```bash
-raka navigate SettingsPage                # By class name
-raka navigate MyApp.Pages.SettingsPage    # By full type name
+raka navigate SettingsPage                    # By class name (short name works)
+raka navigate MyApp.Pages.SettingsPage        # By full type name
+raka navigate NoteDetailPage --param "note-42" # With navigation parameter
 ```
 Also auto-updates the NavigationView selection indicator. Use this as your primary navigation method.
 
@@ -156,9 +178,39 @@ raka screenshot -f screenshot.png              # Full window (auto-detects Mica)
 raka screenshot e5 -f element.png              # Specific element
 raka screenshot --mode render --bg "#1E1E1E"   # Explicit dark background
 raka screenshot --mode render --bg "#F3F3F3"   # Explicit light background
+raka screenshot e5 --state PointerOver -f hover.png  # ⭐ One-shot: capture with temp visual state
 ```
 
+**`--state` flag:** Temporarily applies a visual state (e.g., PointerOver, Pressed), captures the screenshot, then **automatically reverts** to the previous state. One command instead of three — perfect for verifying hover/press styling.
+
 **Mica/Acrylic auto-detect:** If the app uses `MicaBackdrop` or `DesktopAcrylicBackdrop`, Raka automatically switches to render mode with a theme-appropriate background. No special flags needed.
+
+### `raka get-states`
+List visual state groups and their states for a control.
+```bash
+raka get-states --name MyButton                # See all available visual states
+raka get-states e5                             # By element ID
+```
+Output:
+```json
+[{
+  "groupName": "CommonStates",
+  "currentState": "Normal",
+  "states": [
+    { "name": "Normal", "hasStoryboard": false },
+    { "name": "PointerOver", "hasStoryboard": true },
+    { "name": "Pressed", "hasStoryboard": true }
+  ]
+}]
+```
+
+### `raka set-state`
+Apply a visual state to a control via VisualStateManager.GoToState().
+```bash
+raka set-state --name MyButton --state PointerOver   # Apply hover state
+raka set-state e5 --state Pressed                    # Apply pressed state
+raka set-state --name MyButton --state Normal        # Revert to normal
+```
 
 ### `raka get-property` / `raka set-property`
 Read and modify element properties live. `set-property` triggers change events (e.g., TextChanged), making it useful for testing input-driven behavior.
@@ -179,11 +231,24 @@ raka set-property --name MyButton Background "#FF5500"  # ⭐ By x:Name (no elem
 **Tip:** Use `--name` / `-n` to target elements by their `x:Name` without needing to `inspect` first — searches the visual tree automatically.
 
 ### `raka type`
-Type text into a TextBox or other text input element. Uses the UI Automation `IValueProvider` for reliable input.
+Type text via **real keystroke simulation** (Win32 SendInput). Triggers the full input pipeline — `TextChanged` fires with `UserInput` reason, AutoSuggestBox shows dropdown suggestions.
 ```bash
 raka type "Hello, World!" --name SearchBox    # ⭐ By x:Name (best)
 raka type "Hello, World!" -e e8               # By element ID
+raka type "slow typing" --name Input -d 100   # Custom inter-key delay (ms)
 ```
+
+### `raka hotkey`
+Send keyboard shortcuts via OS input simulation.
+```bash
+raka hotkey Tab                               # Tab key
+raka hotkey Ctrl+S                            # Save shortcut
+raka hotkey Ctrl+Z                            # Undo
+raka hotkey Shift+Tab                         # Reverse tab
+raka hotkey Alt+F4                            # Close window
+raka hotkey Ctrl+A                            # Select all
+```
+Supports modifiers: Ctrl, Alt, Shift, Win. Keys: A-Z, 0-9, F1-F12, Tab, Enter, Escape, Delete, Home, End, PageUp, PageDown, arrow keys, Space, Backspace.
 
 ### `raka list-pages`
 List all Page types available in the app's assemblies — useful to discover navigation targets.
@@ -294,9 +359,10 @@ Always use `x:Name` for buttons and controls. When writing XAML, give every inte
 <Button x:Name="SaveButton" Content="Save" />
 <ToggleSwitch x:Name="AutoSaveToggle" />
 ```
-Then click reliably:
+Then interact reliably:
 ```bash
-raka click --name SaveButton
+raka click --name SaveButton     # Real mouse click (visual feedback, full event chain)
+raka invoke --name SaveButton    # Programmatic (fast, no visual feedback)
 ```
 
 ### 2. Use `status` constantly for situational awareness
@@ -357,11 +423,11 @@ raka click --name AiSummarizeButton
 raka status    # Element count > 0 means app is still alive
 ```
 
-### 10. Use `type` for text input and `set-property` for other values
-Instead of typing key-by-key, inject values directly. Change events fire automatically:
+### 10. Use `type` for real keyboard input and `invoke` for fast automation
 ```bash
-raka type "Test content" --name SearchBox    # Best for TextBox input
-raka set-property e13 Value 22               # Slider.ValueChanged fires
+raka type "Search query" --name SearchBox    # Real keystrokes — triggers AutoSuggestBox dropdown
+raka invoke --name SaveButton                # Fast programmatic click — no visual feedback
+raka hotkey Ctrl+S                           # Keyboard shortcuts
 ```
 
 ### 11. Use `resources` to discover theme values before modifying
@@ -387,6 +453,7 @@ raka styles --name MyButton                  # See what style is applied
 | Hot-reload with `xmlns:local` custom controls | Supported — namespaces are auto-injected |
 | Theme brushes can't be overridden at runtime | WinUI 3 resolves from compiled XamlControlsResources; use `set-property` on individual elements |
 | `{x:Bind}` text not searchable | Compiled bindings bypass automation; use `{Binding}`, `--name`, or `--type` |
+| `click`/`type`/`hotkey` need foreground window | SendInput requires the app window to be in foreground; use `invoke` for background |
 
 ---
 
