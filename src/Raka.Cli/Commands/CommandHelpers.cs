@@ -20,7 +20,7 @@ internal static class CommandHelpers
     public static Option<int?> PidOption { get; } = new("--pid") { Description = "Target app by process ID" };
 
     /// <summary>
-    /// Adds --name and --pid options to a command.
+    /// Adds --app and --pid options to a command.
     /// </summary>
     public static void AddTargetOptions(Command command)
     {
@@ -29,7 +29,7 @@ internal static class CommandHelpers
     }
 
     /// <summary>
-    /// Resolves the target app: uses --name/--pid if provided, otherwise falls back to saved session.
+    /// Resolves the target app: uses --app/--pid if provided, otherwise falls back to saved session.
     /// Opens a fresh pipe connection each time (no long-running process needed).
     /// </summary>
     public static async Task<PipeClient> GetConnectedClient(ParseResult parseResult)
@@ -67,8 +67,8 @@ internal static class CommandHelpers
             // No explicit target — use saved session
             var session = SessionManager.LoadActive()
                 ?? throw new InvalidOperationException(
-                    "No target app specified. Use --name <AppName> or --pid <PID>.\n" +
-                    "Example: raka inspect --name MyApp");
+                    "No target app specified. Use --app <AppName> or --pid <PID>.\n" +
+                    "Example: raka inspect --app MyApp");
 
             pipeName = session.PipeName;
             processLabel = $"{session.ProcessName ?? "app"} (PID {session.ProcessId})";
@@ -83,8 +83,7 @@ internal static class CommandHelpers
         {
             throw new InvalidOperationException(
                 $"Cannot connect to {processLabel}. " +
-                "Make sure the app has Raka.DevTools NuGet added:\n" +
-                "  window.UseRakaDevTools();");
+                "Make sure the app has the Raka.DevTools NuGet package added and is running in Debug mode.");
         }
         return client;
     }

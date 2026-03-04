@@ -15,7 +15,7 @@ internal static class ListCommand
             if (session == null)
             {
                 Console.WriteLine("No active connections.");
-                Console.WriteLine("Use 'raka connect --name <AppName>' to connect to a running app.");
+                Console.WriteLine("Use 'raka status --app <AppName>' to connect to a running app.");
                 return;
             }
 
