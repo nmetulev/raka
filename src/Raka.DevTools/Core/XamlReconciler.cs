@@ -32,8 +32,6 @@ internal sealed class XamlReconciler
             return (false, 0, "no_cache"); // first time — no old XAML to diff against
         }
 
-        _lastXaml[elementId] = newXaml;
-
         if (oldXaml == newXaml) return (true, 0, null); // no change
 
         try
@@ -43,11 +41,12 @@ internal sealed class XamlReconciler
 
             int patches = 0;
             ReconcileNode(liveRoot, oldDoc.Root!, newDoc.Root!, ref patches);
+            _lastXaml[elementId] = newXaml; // only cache after successful reconciliation
             return (true, patches, null);
         }
         catch (Exception ex)
         {
-            // Any failure in reconciliation → caller does full replacement
+            // Don't update cache — caller will cache after successful full replacement
             return (false, 0, $"{ex.GetType().Name}: {ex.Message}");
         }
     }
@@ -258,23 +257,26 @@ internal sealed class XamlReconciler
             // Unmatched or type changed or reconciliation failed → create new element
             if (panel != null)
             {
-                try
+                var childXaml = EnsureXmlns(newChildren[ni].ToString());
+                var parsed = XamlReader.Load(childXaml);
+                if (parsed is UIElement newUie)
                 {
-                    var childXaml = EnsureXmlns(newChildren[ni].ToString());
-                    var parsed = XamlReader.Load(childXaml);
-                    if (parsed is UIElement newUie)
-                    {
-                        resultChildren.Add(newUie);
-                        patches++;
-                        continue;
-                    }
+                    resultChildren.Add(newUie);
+                    patches++;
+                    continue;
                 }
-                catch { /* fall through: skip this child */ }
+
+                // XamlReader produced a non-UIElement — can't reconcile
+                throw new InvalidOperationException(
+                    $"XamlReader.Load produced {parsed?.GetType().Name ?? "null"} for {GetTypeName(newChildren[ni])}, expected UIElement");
             }
 
-            // Can't create either — keep the old element if we had one
+            // Non-panel parent — keep old element if we had a match, otherwise fail
             if (oldIdx >= 0 && liveElem is UIElement fallbackUie)
                 resultChildren.Add(fallbackUie);
+            else
+                throw new InvalidOperationException(
+                    $"Cannot create child {GetTypeName(newChildren[ni])} in {live.GetType().Name}");
         }
 
         // Phase 4: Replace panel children if the list changed

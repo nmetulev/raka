@@ -771,7 +771,7 @@ internal sealed class CommandRouter
         }
 
         // Reconciliation failed (structural change or first load) — fall back to full replacement
-        _reconciler.CacheXaml(elementId, xaml);
+        // NOTE: CacheXaml is called only after successful replacement to prevent cache desync.
 
         var parent = VisualTreeHelper.GetParent(element);
         if (parent == null)
@@ -783,6 +783,7 @@ internal sealed class CommandRouter
                     return new RakaResponse { Success = false, Error = $"Parsed XAML produced {parsed2.GetType().Name}, expected a UIElement" };
 
                 _window.Content = newRoot;
+                _reconciler.CacheXaml(elementId, xaml);
                 var rootNode = _walker.WalkFrom(newRoot, 2);
                 var dataDict2 = new Dictionary<string, object?>
                 {
@@ -832,6 +833,7 @@ internal sealed class CommandRouter
             return new RakaResponse { Success = false, Error = $"Cannot replace in {parent.GetType().Name}" };
         }
 
+        _reconciler.CacheXaml(elementId, xaml);
         var node2 = _walker.WalkFrom(newElement, 2);
         var dataDict = new Dictionary<string, object?>
         {
