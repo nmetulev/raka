@@ -749,8 +749,13 @@ internal sealed class CommandRouter
         if (element is not UIElement uiElement)
             return new RakaResponse { Success = false, Error = $"Element {elementId} ({element.GetType().Name}) is not a UIElement" };
 
+        // When hot-reload targets a Page/Window, ExtractInnerContent strips the wrapper,
+        // leaving the content root (e.g., ScrollViewer) as the XAML root. The reconciler
+        // needs to target the content element, not the wrapper.
+        var reconcileTarget = ResolveContentTarget(element, xaml);
+
         // Try React-style reconciliation first (diffs old vs new XAML, patches in place)
-        var (reconciled, patchCount, reconcileError) = _reconciler.TryReconcile(element, elementId, xaml);
+        var (reconciled, patchCount, reconcileError) = _reconciler.TryReconcile(reconcileTarget, elementId, xaml);
         if (reconciled)
         {
             // Success — tree was patched in place, all runtime state preserved
@@ -771,8 +776,34 @@ internal sealed class CommandRouter
         }
 
         // Reconciliation failed (structural change or first load) — fall back to full replacement
-        // NOTE: CacheXaml is called only after successful replacement to prevent cache desync.
 
+        try
+        {
+            return FullReplace(element, uiElement, elementId, xaml, reconcileError);
+        }
+        catch (Exception ex) when (reconcileError == "no_cache")
+        {
+            // Full replacement failed (e.g., XAML has event handlers that XamlReader.Load can't parse).
+            // Since this is the first load (no_cache), seed the cache with the current file content
+            // so subsequent reconciliation can diff against this baseline and patch in-place.
+            _reconciler.CacheXaml(elementId, xaml);
+            var seedData = new Dictionary<string, object?>
+            {
+                ["id"] = elementId,
+                ["type"] = uiElement.GetType().Name,
+                ["mode"] = "seed",
+                ["reconcileError"] = $"{ex.GetType().Name}: {ex.Message}"
+            };
+            return new RakaResponse
+            {
+                Success = true,
+                Data = JsonSerializer.SerializeToElement(seedData, RakaJson.Options)
+            };
+        }
+    }
+
+    private RakaResponse FullReplace(DependencyObject element, UIElement uiElement, string elementId, string xaml, string? reconcileError)
+    {
         var parent = VisualTreeHelper.GetParent(element);
         if (parent == null)
         {
@@ -848,6 +879,55 @@ internal sealed class CommandRouter
             Success = true,
             Data = JsonSerializer.SerializeToElement(dataDict, RakaJson.Options)
         };
+    }
+
+    /// <summary>
+    /// Resolves the actual content target for reconciliation. When hot-reload targets
+    /// a Page or Window, ExtractInnerContent strips the wrapper, so the XAML root type
+    /// won't match the target element. This walks into the content to find the matching element.
+    /// </summary>
+    private static DependencyObject ResolveContentTarget(DependencyObject element, string xaml)
+    {
+        // Parse the XAML root type name (e.g., "ScrollViewer" from "<ScrollViewer ...>")
+        var xamlRootType = GetXamlRootTypeName(xaml);
+        if (xamlRootType == null) return element;
+
+        var liveTypeName = element.GetType().Name;
+        if (string.Equals(liveTypeName, xamlRootType, StringComparison.Ordinal))
+            return element; // types match — no adjustment needed
+
+        // Walk into content (Page → Content, ContentControl → Content, etc.)
+        if (element is ContentControl cc && cc.Content is DependencyObject content)
+        {
+            if (content.GetType().Name == xamlRootType)
+                return content;
+        }
+
+        // Generic Content property fallback
+        var contentProp = element.GetType().GetProperty("Content");
+        if (contentProp?.GetValue(element) is DependencyObject dpContent && dpContent.GetType().Name == xamlRootType)
+            return dpContent;
+
+        return element; // can't resolve — use original
+    }
+
+    private static string? GetXamlRootTypeName(string xaml)
+    {
+        // Fast parse: find the first tag name, e.g., "<ScrollViewer " → "ScrollViewer"
+        var trimmed = xaml.AsSpan().TrimStart();
+        if (trimmed.Length == 0 || trimmed[0] != '<') return null;
+
+        var start = 1;
+        var end = start;
+        while (end < trimmed.Length && trimmed[end] != ' ' && trimmed[end] != '>' && trimmed[end] != '/' && trimmed[end] != '\r' && trimmed[end] != '\n')
+            end++;
+
+        if (end <= start) return null;
+        var name = trimmed[start..end].ToString();
+
+        // Strip namespace prefix (e.g., "local:MyControl" → "MyControl")
+        var colon = name.IndexOf(':');
+        return colon >= 0 ? name[(colon + 1)..] : name;
     }
 
     /// <summary>

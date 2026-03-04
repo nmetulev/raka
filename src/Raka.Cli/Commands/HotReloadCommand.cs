@@ -97,13 +97,17 @@ internal static class HotReloadCommand
         };
 
         var debounce = DateTime.MinValue;
+        var debounceLock = new object();
         var tcs = new TaskCompletionSource();
 
         watcher.Changed += async (_, e) =>
         {
             var now = DateTime.UtcNow;
-            if ((now - debounce).TotalMilliseconds < 300) return;
-            debounce = now;
+            lock (debounceLock)
+            {
+                if ((now - debounce).TotalMilliseconds < 300) return;
+                debounce = now;
+            }
             await Task.Delay(100);
             await ReloadXaml(parseResult, fullPath, elementId);
         };
@@ -233,6 +237,15 @@ internal static class HotReloadCommand
 
         Console.Error.WriteLine($"Mapped {fileToElementId.Count} file(s) to live elements.");
 
+        // Seed the reconciler cache with current file contents so subsequent
+        // edits can use in-place reconciliation (even for files with event handlers
+        // that XamlReader.Load can't parse for full replacement).
+        Console.Error.WriteLine("Seeding reconciler cache...");
+        foreach (var (filePath, elementId) in fileToElementId)
+        {
+            await ReloadXaml(parseResult, filePath, elementId);
+        }
+
         // Watch directory for changes
         using var watcher = new FileSystemWatcher(directory, "*.xaml")
         {
@@ -242,17 +255,21 @@ internal static class HotReloadCommand
         };
 
         var debounceMap = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        var debounceLock = new object();
         var tcs = new TaskCompletionSource();
 
         watcher.Changed += async (_, e) =>
         {
             var changedPath = Path.GetFullPath(e.FullPath);
 
-            // Debounce per-file
+            // Thread-safe debounce per-file
             var now = DateTime.UtcNow;
-            if (debounceMap.TryGetValue(changedPath, out var last) && (now - last).TotalMilliseconds < 300)
-                return;
-            debounceMap[changedPath] = now;
+            lock (debounceLock)
+            {
+                if (debounceMap.TryGetValue(changedPath, out var last) && (now - last).TotalMilliseconds < 300)
+                    return;
+                debounceMap[changedPath] = now;
+            }
 
             await Task.Delay(100);
 

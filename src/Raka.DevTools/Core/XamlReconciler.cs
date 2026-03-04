@@ -28,11 +28,12 @@ internal sealed class XamlReconciler
     {
         if (!_lastXaml.TryGetValue(elementId, out var oldXaml))
         {
-            _lastXaml[elementId] = newXaml;
-            return (false, 0, "no_cache"); // first time — no old XAML to diff against
+            // Don't cache here — caller will cache after successful full replacement.
+            // This prevents desync if a duplicate event sees the cache before replacement completes.
+            return (false, 0, "no_cache");
         }
 
-        if (oldXaml == newXaml) return (true, 0, null); // no change
+        if (oldXaml == newXaml) return (true, 0, "same_xaml");
 
         try
         {

@@ -43,7 +43,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.7705" />
-    <PackageReference Include="Microsoft.Windows.SDK.BuildTools.WinApp" Version="0.2.1-nm-vsc-debug-output.107">
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools.WinApp" Version="0.2.1-nm-vsc-debug-output.101">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
