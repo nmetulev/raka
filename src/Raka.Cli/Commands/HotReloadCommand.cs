@@ -86,7 +86,8 @@ internal static class HotReloadCommand
         }
         Console.Error.WriteLine($"Target element: {elementId}");
 
-        await ReloadXaml(parseResult, fullPath, elementId);
+        // Seed the cache with current file content (don't replace the live tree)
+        await SeedXamlCache(parseResult, fullPath, elementId);
 
         var dir = Path.GetDirectoryName(fullPath)!;
         var fileName = Path.GetFileName(fullPath);
@@ -240,10 +241,12 @@ internal static class HotReloadCommand
         // Seed the reconciler cache with current file contents so subsequent
         // edits can use in-place reconciliation (even for files with event handlers
         // that XamlReader.Load can't parse for full replacement).
+        // Uses seedOnly=true to cache without replacing — full replacement would break
+        // elements like TitleBar that need the window chrome connection.
         Console.Error.WriteLine("Seeding reconciler cache...");
         foreach (var (filePath, elementId) in fileToElementId)
         {
-            await ReloadXaml(parseResult, filePath, elementId);
+            await SeedXamlCache(parseResult, filePath, elementId);
         }
 
         // Watch directory for changes
@@ -434,6 +437,35 @@ internal static class HotReloadCommand
             {
                 Console.Error.WriteLine($"  ✗ Error: {response.Error}");
             }
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"  ✗ {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Seeds the reconciler cache with the current file content without modifying the live tree.
+    /// This establishes a baseline for subsequent reconciliation diffs.
+    /// </summary>
+    private static async Task SeedXamlCache(ParseResult parseResult, string filePath, string elementId)
+    {
+        try
+        {
+            var xaml = await File.ReadAllTextAsync(filePath);
+            var innerXaml = ExtractInnerContent(xaml);
+
+            using var client = await CommandHelpers.GetConnectedClient(parseResult);
+
+            var p = new ReplaceXamlParams(elementId, innerXaml, SeedOnly: true);
+            var parameters = JsonSerializer.SerializeToElement(p, CliJsonContext.Default.ReplaceXamlParams);
+            var response = await client.SendCommandAsync(Protocol.Commands.ReplaceXaml, parameters);
+
+            var shortName = Path.GetFileName(filePath);
+            if (response.Success)
+                Console.Error.WriteLine($"  {shortName} → cached");
+            else
+                Console.Error.WriteLine($"  {shortName} → ✗ {response.Error}");
         }
         catch (Exception ex)
         {

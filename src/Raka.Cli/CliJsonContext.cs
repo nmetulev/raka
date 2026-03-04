@@ -69,7 +69,7 @@ internal record ScreenshotParams(string? Element = null, string? Mode = null, st
 
 internal record AddXamlParams(string Parent, string Xaml, int? Index = null);
 
-internal record ReplaceXamlParams(string Element, string Xaml);
+internal record ReplaceXamlParams(string Element, string Xaml, bool? SeedOnly = null);
 
 internal record NavigateParams(string Page, string? Param = null);
 

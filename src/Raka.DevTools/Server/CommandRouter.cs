@@ -743,6 +743,19 @@ internal sealed class CommandRouter
         var elementId = elemProp.GetString()!;
         var xaml = xamlProp.GetString()!;
 
+        // Seed-only mode: just cache the XAML for future reconciliation, don't modify the tree.
+        // Used during hot-reload startup to establish a baseline without disrupting the live app.
+        if (parameters.Value.TryGetProperty("seedOnly", out var seedProp) && seedProp.GetBoolean())
+        {
+            _reconciler.CacheXaml(elementId, xaml);
+            return new RakaResponse
+            {
+                Success = true,
+                Data = JsonSerializer.SerializeToElement(
+                    new Dictionary<string, object?> { ["mode"] = "seed" }, RakaJson.Options)
+            };
+        }
+
         var element = _walker.GetElement(elementId)
             ?? throw new ArgumentException($"Element '{elementId}' not found. Run 'inspect' first.");
 
