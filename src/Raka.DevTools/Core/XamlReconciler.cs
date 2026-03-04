@@ -423,12 +423,45 @@ internal sealed class XamlReconciler
         return field?.GetValue(null) as DependencyProperty;
     }
 
+    private static readonly Dictionary<string, Type> _typeCache = new(StringComparer.Ordinal);
+
     private static Type? ResolveType(string shortName)
     {
-        // Search WinUI Controls assembly
+        if (_typeCache.TryGetValue(shortName, out var cached))
+            return cached;
+
+        // Try well-known WinUI namespaces first (avoids GetTypes() which throws
+        // ReflectionTypeLoadException on WinUI assemblies)
         var asm = typeof(FrameworkElement).Assembly;
-        return asm.GetTypes().FirstOrDefault(t => t.Name == shortName)
-            ?? typeof(Grid).Assembly.GetTypes().FirstOrDefault(t => t.Name == shortName);
+        foreach (var ns in new[] {
+            "Microsoft.UI.Xaml.Controls",
+            "Microsoft.UI.Xaml.Controls.Primitives",
+            "Microsoft.UI.Xaml",
+            "Microsoft.UI.Xaml.Media",
+            "Microsoft.UI.Xaml.Shapes",
+            "Microsoft.UI.Xaml.Documents" })
+        {
+            var type = asm.GetType($"{ns}.{shortName}");
+            if (type != null)
+            {
+                _typeCache[shortName] = type;
+                return type;
+            }
+        }
+
+        // Fallback: scan types safely (handles ReflectionTypeLoadException)
+        try
+        {
+            var type = asm.GetTypes().FirstOrDefault(t => t.Name == shortName);
+            if (type != null) { _typeCache[shortName] = type; return type; }
+        }
+        catch (ReflectionTypeLoadException ex)
+        {
+            var type = ex.Types.FirstOrDefault(t => t?.Name == shortName);
+            if (type != null) { _typeCache[shortName] = type; return type; }
+        }
+
+        return null;
     }
 
     private static object? ConvertValue(Type targetType, string value)
