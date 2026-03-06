@@ -18,6 +18,10 @@ x86/
 ARM64/
 artifacts/
 
+## MSIX / Signing
+*.msix
+*.pfx
+
 ## CMake (Raka.Tap)
 src/Raka.Tap/build*/
 

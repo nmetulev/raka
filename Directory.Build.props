@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
-    <Version>0.3.1</Version>
+    <Version>0.3.2</Version>
     <Authors>Nikola Metulev</Authors>
     <Product>Raka</Product>
     <Copyright>Copyright (c) 2026 Nikola Metulev</Copyright>

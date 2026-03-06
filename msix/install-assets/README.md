@@ -1,0 +1,40 @@
+# Raka CLI MSIX Installation
+
+This package contains pre-built MSIX packages for the Raka CLI tool.
+
+> **Note:** The MSIX packages are signed with a dev certificate. Installing via the `install.cmd` script will install the dev certificate on your machine.
+
+## Quick Installation
+
+1. Double-click `install.cmd`
+2. When prompted, allow elevation to Administrator
+3. Done!
+
+The installer automatically detects your device architecture (x64 or ARM64) and installs the correct package.
+
+> **Note:** When downloading scripts from the internet, Windows blocks execution until they are unblocked. The `install.cmd` script should automatically unblock downloaded files. However, if that fails, you will need to right click on each file -> click Properties -> check Unblock -> click OK.
+
+## What's Included
+
+- **raka_[version]_x64.msix** - The MSIX package for x64 architecture
+- **raka_[version]_arm64.msix** - The MSIX package for ARM64 architecture
+- **install.cmd** - Double-click installer (easiest method)
+- **install.ps1** - PowerShell installer script (alternative method)
+
+## Version Information
+
+- Version: [version]
+- Architectures: x64, ARM64
+
+## Troubleshooting
+
+### "Cannot be loaded because running scripts is disabled"
+If you see a script execution error, Right-click `install.ps1` → Properties → Check "Unblock" → OK
+
+### "Windows cannot install this package"
+- Make sure you ran `install.ps1` with administrator privileges
+- The certificate must be in the Trusted People store
+
+### "This app package is not signed with a trusted certificate"
+- Run `install.ps1` with administrator privileges
+- Verify the certificate was installed to LocalMachine\TrustedPeople

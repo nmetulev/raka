@@ -6,6 +6,7 @@ on:
     paths:
       - 'Directory.Build.props'
       - 'src/**'
+      - 'msix/**'
   workflow_dispatch:
 
 permissions:
@@ -45,9 +46,6 @@ jobs:
     needs: check-version
     if: needs.check-version.outputs.should_release == 'true'
     runs-on: windows-latest
-    strategy:
-      matrix:
-        runtime: [win-x64, win-arm64]
 
     steps:
       - uses: actions/checkout@v4
@@ -58,44 +56,22 @@ jobs:
           dotnet-version: '10.0.x'
           dotnet-quality: 'preview'
 
-      - name: Restore
-        run: dotnet restore src/Raka.Cli/Raka.Cli.csproj
+      - name: Setup WinApp CLI
+        uses: microsoft/setup-WinAppCli@v0.1
 
-      - name: Build CLI (${{ matrix.runtime }})
+      - name: Build all
+        run: .\build.ps1
+
+      - name: Zip MSIX distribution
         run: |
-          dotnet publish src/Raka.Cli/Raka.Cli.csproj `
-            --configuration Release `
-            --runtime ${{ matrix.runtime }} `
-            --output artifacts/cli/raka-${{ matrix.runtime }}
+          $version = "${{ needs.check-version.outputs.version }}"
+          Compress-Archive -Path "artifacts/msix/*" -DestinationPath "artifacts/raka-msix-v$version.zip"
 
-      - name: Zip CLI
-        run: Compress-Archive -Path "artifacts/cli/raka-${{ matrix.runtime }}/*" -DestinationPath "artifacts/raka-${{ matrix.runtime }}.zip"
-
-      - name: Upload CLI artifact
+      - name: Upload CLI artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: raka-${{ matrix.runtime }}
-          path: artifacts/raka-${{ matrix.runtime }}.zip
-
-  pack:
-    needs: check-version
-    if: needs.check-version.outputs.should_release == 'true'
-    runs-on: windows-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-          dotnet-quality: 'preview'
-
-      - name: Restore
-        run: dotnet restore src/Raka.DevTools/Raka.DevTools.csproj
-
-      - name: Pack NuGet
-        run: dotnet pack src/Raka.DevTools/Raka.DevTools.csproj --configuration Release --output artifacts/nuget
+          name: cli-packages
+          path: artifacts/cli/*.zip
 
       - name: Upload NuGet artifact
         uses: actions/upload-artifact@v4
@@ -103,8 +79,14 @@ jobs:
           name: nuget-packages
           path: artifacts/nuget/*.nupkg
 
+      - name: Upload MSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: msix-packages
+          path: artifacts/raka-msix-v${{ needs.check-version.outputs.version }}.zip
+
   release:
-    needs: [check-version, build, pack]
+    needs: [check-version, build]
     if: needs.check-version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
 
@@ -125,6 +107,6 @@ jobs:
             --repo ${{ github.repository }} \
             --title "Raka v${version}" \
             --generate-notes \
-            release-assets/raka-win-x64/raka-win-x64.zip \
-            release-assets/raka-win-arm64/raka-win-arm64.zip \
-            release-assets/nuget-packages/*.nupkg
+            release-assets/cli-packages/*.zip \
+            release-assets/nuget-packages/*.nupkg \
+            release-assets/msix-packages/raka-msix-v${version}.zip
