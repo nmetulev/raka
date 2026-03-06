@@ -120,7 +120,7 @@ if (-not $SkipMsix -and -not $SkipCli) {
     # Generate certificate if it doesn't exist
     if (-not (Test-Path $certPath)) {
         Write-Host "  Generating dev certificate..." -ForegroundColor Gray
-        winapp cert generate --output "$certPath" --if-exists skip
+        winapp cert generate --if-exists skip
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Certificate generation failed"
             exit 1
