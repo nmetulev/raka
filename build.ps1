@@ -107,9 +107,9 @@ if (-not $SkipMsix -and -not $SkipCli) {
     $runtimes = if ($Runtime) { @($Runtime) } else { @("win-x64", "win-arm64") }
     $msixDir = Join-Path $artifactsDir "msix"
     $msixLayoutDir = Join-Path $artifactsDir "msix-layout"
-    $msixSourceDir = Join-Path $root "msix"
-    $msixManifestPath = Join-Path $msixSourceDir "appxmanifest.xml"
-    $msixAssetsPath = Join-Path $msixSourceDir "Assets"
+    $msixManifestPath = Join-Path $root "appxmanifest.xml"
+    $msixAssetsPath = Join-Path $root "Assets"
+    $installAssetsDir = Join-Path $root "msix"
     $certPath = "devcert.pfx"
     $msixVersion = "$version.0"
 
@@ -120,7 +120,7 @@ if (-not $SkipMsix -and -not $SkipCli) {
     # Generate certificate if it doesn't exist
     if (-not (Test-Path $certPath)) {
         Write-Host "  Generating dev certificate..." -ForegroundColor Gray
-        winapp cert generate --publisher "CN=Raka" --output "$certPath" --if-exists skip
+        winapp cert generate --output "$certPath" --if-exists skip
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Certificate generation failed"
             exit 1
@@ -168,7 +168,6 @@ if (-not $SkipMsix -and -not $SkipCli) {
     }
 
     # Copy install helpers
-    $installAssetsDir = Join-Path $msixSourceDir "install-assets"
     Copy-Item (Join-Path $installAssetsDir "install.ps1") $msixDir -Force
     Copy-Item (Join-Path $installAssetsDir "install.cmd") $msixDir -Force
 
