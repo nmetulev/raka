@@ -110,7 +110,7 @@ if (-not $SkipMsix -and -not $SkipCli) {
     $msixSourceDir = Join-Path $root "msix"
     $msixManifestPath = Join-Path $msixSourceDir "appxmanifest.xml"
     $msixAssetsPath = Join-Path $msixSourceDir "Assets"
-    $certPath = Join-Path $artifactsDir "devcert.pfx"
+    $certPath = "devcert.pfx"
     $msixVersion = "$version.0"
 
     New-Item -ItemType Directory -Path $msixDir -Force | Out-Null
@@ -120,7 +120,7 @@ if (-not $SkipMsix -and -not $SkipCli) {
     # Generate certificate if it doesn't exist
     if (-not (Test-Path $certPath)) {
         Write-Host "  Generating dev certificate..." -ForegroundColor Gray
-        winapp cert generate --publisher "CN=Raka" --output $certPath --if-exists skip
+        winapp cert generate --publisher "CN=Raka" --output "$certPath" --if-exists skip
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Certificate generation failed"
             exit 1
@@ -158,7 +158,7 @@ if (-not $SkipMsix -and -not $SkipCli) {
 
         # Package and sign
         $msixOutput = Join-Path $msixDir "raka_${msixVersion}_${arch}.msix"
-        winapp package $layoutDir --cert $certPath --skip-pri --output $msixOutput --executable "raka.exe"
+        winapp package $layoutDir --cert "$certPath" --skip-pri --output "$msixOutput" --executable "raka.exe"
         if ($LASTEXITCODE -ne 0) {
             Write-Error "MSIX packaging failed for $arch"
             exit 1
