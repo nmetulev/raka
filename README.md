@@ -1,4 +1,4 @@
-# 🎭 Raka
+# 💪 Raka
 
 **Playwright-like automation for WinUI 3 apps.**
 
@@ -766,7 +766,7 @@ After installing, the skill is automatically available to Copilot CLI agents wor
 - [x] **Phase 3** — Style/resource/context inspection (styles, resources, set-resource, list-pages, type)
 - [x] **Phase 4** — C++ TAP DLL injection (inspect any WinUI 3 app without NuGet)
 - [x] **Phase 4b** — Hot Reload (watch XAML files, auto-replace on save)
-- [ ] **Phase 5** — TAP-mode write operations via IVisualTreeService3, MCP server, Copilot integration
+- [ ] **Phase 5** — TAP-mode write operations via IVisualTreeService3
 - [ ] **Phase 6** — Watch mode, XAML source correlation
 
 ---
