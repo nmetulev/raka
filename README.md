@@ -143,6 +143,32 @@ cd project-raka
 
 ### NuGet package (in-app)
 
+The `Raka.DevTools` package is published to **GitHub Packages** on every release.
+
+#### 1. Authenticate with GitHub Packages
+
+You need a GitHub personal access token (classic) with the `read:packages` scope. [Create one here](https://github.com/settings/tokens/new?scopes=read:packages).
+
+Add the GitHub Packages NuGet source with your token:
+
+```bash
+dotnet nuget add source "https://nuget.pkg.github.com/nmetulev/index.json" \
+  --name "github-raka" \
+  --username YOUR_GITHUB_USERNAME \
+  --password YOUR_GITHUB_TOKEN
+```
+
+> **Tip:** On CI, use the `GITHUB_TOKEN` secret instead of a personal token. In a GitHub Actions workflow, add a `nuget.config` with the source and authenticate via `setup-dotnet`:
+> ```yaml
+> - uses: actions/setup-dotnet@v4
+>   with:
+>     source-url: https://nuget.pkg.github.com/nmetulev/index.json
+>   env:
+>     NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+> ```
+
+#### 2. Install the package
+
 ```bash
 dotnet add package Raka.DevTools
 ```
@@ -731,7 +757,7 @@ Releases are automated via GitHub Actions. To create a release:
    ```
 2. Commit and push to `master`/`main`.
 
-The workflow reads the version, checks if a GitHub Release already exists for it, and if not — builds CLI binaries (x64 + ARM64), packs the NuGet package, and creates a GitHub Release with all artifacts.
+The workflow reads the version, checks if a GitHub Release already exists for it, and if not — builds CLI binaries (x64 + ARM64), packs the NuGet package, creates a GitHub Release with all artifacts, and publishes `Raka.DevTools` to [GitHub Packages](https://github.com/nmetulev/raka/pkgs/nuget/Raka.DevTools).
 
 ---
 

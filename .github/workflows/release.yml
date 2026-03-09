@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   check-version:
@@ -99,6 +100,12 @@ jobs:
         with:
           path: release-assets
 
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -111,3 +118,10 @@ jobs:
             release-assets/cli-packages/*.zip \
             release-assets/nuget-packages/*.nupkg \
             release-assets/msix-packages/raka-msix-v${version}.zip
+
+      - name: Publish to GitHub Packages
+        run: |
+          dotnet nuget push release-assets/nuget-packages/*.nupkg \
+            --source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" \
+            --api-key ${{ secrets.GITHUB_TOKEN }} \
+            --skip-duplicate
